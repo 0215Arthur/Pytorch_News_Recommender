@@ -1,6 +1,6 @@
 *.csv
 *.txt
 *pyc
-MIND_2020/dataset_processed/
+MIND_2020/data_processed/
 MIND_2020/save_model/
 MIND_2020/logs/

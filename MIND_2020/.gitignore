@@ -1,0 +1,6 @@
+*.csv
+*.txt
+*pyc
+dataset_processed/
+save_model/
+logs/
