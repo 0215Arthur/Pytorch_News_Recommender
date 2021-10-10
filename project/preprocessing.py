@@ -1,5 +1,5 @@
 """
-pre-process the mind dataset to get the proper format data for model.
+pre-process the raw datasets to get the proper format data for model.
 
 """
 
@@ -36,7 +36,11 @@ from config import Config
 
 class News_Processor(object):
     def __init__(self,config):
+        self.dataset="MIND"
         self.conf=config
+        self.root="./data/MIND/"
+        self.train_path=self.root + "train/"
+        self.dev_path=self.root + "dev/"
         self.stop_words=['the',',','.',':','...','``','\'',"''",'\'s'
                          #'for','it','and','from','in','as','he','his','be',
                          #'this','will','after','by','have','you',
@@ -103,46 +107,29 @@ class News_Processor(object):
               cols: the detail columns (list)
         return all news info (DataFrame format)
         """
-        news_info=pd.read_table(self.conf.train_path+'news.tsv',header=None,sep='\t',
+        news_info=pd.read_table(self.train_path+'news.tsv',header=None,sep='\t',
                                     names=['News_ID','Category','SubCategory',
                                             'Title','Abstract','URL',
                                             'Title Entities','Abstract Entites'])[cols]
-        news_info_2=pd.read_table(self.conf.dev_path+'news.tsv',header=None,sep='\t',
+        news_info_2=pd.read_table(self.dev_path+'news.tsv',header=None,sep='\t',
                                         names=['News_ID','Category','SubCategory',
                                                 'Title','Abstract','URL',
                                                 'Title Entities','Abstract Entites'])[cols]
-
-        news_info_test=pd.read_table(self.conf.test_path+'news.tsv',header=None,sep='\t',
-                                        names=['News_ID','Category','SubCategory',
-                                                'Title','Abstract','URL',
-                                                'Title Entities','Abstract Entites'])[cols]
-
-        # print('train_set : the number of News',news_info.shape)
-        # print('dev_set : the number of News',news_info_2.shape)
-        # print('test_set : the number of News',news_info_test.shape)
 
         news_info=pd.concat([news_info_2,news_info])
     
         train_lens=news_info.shape[0]
         news_info.drop_duplicates(['News_ID' ],inplace=True,keep='first')
         print('train_set + dev_set : the number of News',news_info.shape)
-        old_lens=news_info.shape[0]
-
-        news_info=pd.concat([news_info,news_info_test])
-        news_info.drop_duplicates(['News_ID' ],inplace=True,keep='first')
-        news_info=news_info.reset_index(drop=True)
-        new_lens=news_info.shape[0]
-        print('train_set + dev_set + test_set : the number of News',news_info.shape)
+        news_info=news_info.dropna(axis=0,subset = ["Title"])
         #print(new_lens-old_lens)
-        #print(news_info_test.shape[0])
-
+        print(news_info.shape[0])
+        print(news_info["News_ID"].nunique())
         return news_info[cols]
     
     def _count_news_words(self):
         """
         func: count the words of the all news to remap the words to IDs.
-
-
         """
         train_news=self._get_all_news_info(cols=['News_ID','Title','Abstract'])
         # print(train_news['Title'].head())
@@ -220,180 +207,6 @@ class News_Processor(object):
 
         train_news[['News_ID', 'Title', 'Abstract']].to_csv(os.path.join(config.data_path, 'news_words.csv'),index=False,header=None)
         print('Finish news preprocessing for training')
-
-
-
-class Demo_News_Processor(object):
-    def __init__(self,config):
-        self.conf=config
-
-    @log_exec_time
-    def _get_bert_embeds(self,embed_size=1024):
-        """
-        build bert embedding for title/abstrats
-        """
-        news_info=self._get_all_news_info(cols=['News_ID','Title','Abstract'])
-        ## 填充缺失摘要的新闻
-        news_info.fillna(method='ffill', axis=1,inplace=True)
-        bc=BertClient(check_length=False) # check_length=False
-        titles_vec=bc.encode(news_info['Title'].tolist())
-        absts_vec= bc.encode(news_info['Abstract'].tolist())
-        embeds=(titles_vec+absts_vec)/2
-        print('News original size:',embeds.shape)
-        x=np.zeros((1,embed_size))
-        
-        embeds=np.concatenate([x,embeds])
-        print('News merge size:',embeds.shape)
-        np.savez_compressed('./data_processed/news_embeds_{}.npz'.format(embed_size), embeddings=embeds)
-        print('npz saved to ./data_processed/news_embeds.npz')
-
-    @log_exec_time
-    def _get_word_embeds(self):
-        """
-        build word embedding matrix for the words in dataset
-        
-        """
-        print('Start word embedding...')
-        word_dict = dict(pd.read_csv(os.path.join(self.conf.data_path, 'demo_word_dict.csv'), sep='\t', na_filter=False, header=0).values.tolist())
-
-        glove_embedding = pd.read_table('./glove.840B.300d.txt', sep=' ', header=None, index_col=0, quoting=3)
-        embedding_result = np.random.normal(size=(len(word_dict) , 300))
-        embedding_result=np.concatenate((np.zeros((1,300)),embedding_result))
-        print(embedding_result.shape)
-        word_missing = 0
-       # return 
-        #embedding_result=glove_embedding.loc[word_dict.items()]
-
-        with tqdm(total=len(word_dict), desc="Generating word embedding") as p:
-            for k, v in word_dict.items():
-            # print(k,v)
-                if k in glove_embedding.index:
-                    embedding_result[v] = glove_embedding.loc[k].tolist()
-                else:
-                    word_missing += 1
-                p.update(1)
-        print('\ttotal_missing_word:', word_missing)
-        print('Finish word embedding')
-        
-        #embeds=np.load(os.path.join(config.data_, 'word_embedding.npy'))
-        np.savez_compressed(os.path.join(self.conf.data_path, 'demo_word_embedding.npz'), embeddings=embedding_result)
-        print('npz saved to ./data_processed/demo_word_embedding.npz')
-
-    @log_exec_time
-    def _get_all_news_info(self,cols=['News_ID','Category','SubCategory']):
-        """
-        params:
-              cols: the detail columns (list)
-        return all news info (DataFrame format)
-        """
-        
-        news_info=pd.read_table(self.conf.small_train_path+'news.tsv',header=None,sep='\t',
-                                    names=['News_ID','Category','SubCategory',
-                                            'Title','Abstract','URL',
-                                            'Title Entities','Abstract Entites'])[cols]
-        news_info_2=pd.read_table(self.conf.small_dev_path+'news.tsv',header=None,sep='\t',
-                                        names=['News_ID','Category','SubCategory',
-                                                'Title','Abstract','URL',
-                                                'Title Entities','Abstract Entites'])[cols]
- 
-
-        news_info=pd.concat([news_info_2,news_info])
-        
-        news_info.drop_duplicates(['News_ID' ],inplace=True,keep='first')
-        news_info=news_info.reset_index(drop=True)
-        #print(len(news_info['News_ID'].unique()))
-        #print('train_set + dev_set : the number of News',news_info.shape)
-
-        
-        print('train_set + dev_set + test_set : the number of News',news_info.shape)
-
-
-
-        return news_info[cols]
-    
-    def _count_news_words(self):
-        """
-        func: count the words of the all news to remap the words to IDs.
-
-
-        """
-        train_news=self._get_all_news_info(cols=['News_ID','Title','Abstract'])
-        # print(train_news['Title'].head())
-        # print(word_tokenize("I Was An NBA Wife. Here's How It Affected My M"))
-        #return 
-        def clean_words(x):
-            try:
-                return x.lower().translate(str.maketrans('', '', digits))
-            except:
-                return None
-        tokenizer = RegexpTokenizer(r"\w+")
-
-        train_news['Title']=train_news['Title'].apply(lambda x :clean_words(x))
-        train_news['Abstract']=train_news['Abstract'].apply(lambda x :clean_words(x))
-        category_dict, word_freq_dict, word_dict = {}, {}, {}
-        with tqdm(total=len(train_news), desc='Processing news') as p:
-            for row in train_news.itertuples():
-                for word in tokenizer.tokenize(row.Title):
-                    # word=word.strip('-+=.\'')
-                    # if word not in self.stop_words:
-                    word_freq_dict[word] = word_freq_dict.get(word, 0) + 1
-
-                try:
-                    #abst=row.Abstract.lower().translate(str.maketrans('', '', digits))
-                    for word in tokenizer.tokenize(row.Abstract):
-                        # word=word.strip('-+=.\'')
-                        # if word not in self.stop_words:
-                        word_freq_dict[word] = word_freq_dict.get(word, 0) + 1
-                except:
-                    pass
-                p.update(1)
-        # word_freq_dict = sorted(word_freq_dict.items(), key=lambda d:d[1], reverse = True)
-        # print(word_freq_dict[:40])
-        # return 
-
-        for k, v in word_freq_dict.items():
-            if v >= self.conf.word_freq_threshold:
-                word_dict[k] = len(word_dict) + 1
-        #print(word_dict.items())
-    
-        pd.DataFrame(word_dict.items(), columns=['word', 'index']).to_csv(os.path.join(config.data_path, 'demo_word_dict.csv'),
-                                                                            sep='\t', index=False)
-        
-
-        n_words = len(word_dict) + 1
-        
-        print('\ttotal_word:', len(word_dict))
-        print('\tRemember to  n_words = {} '.format( len(word_dict) + 1))
-        
-        def get_title_word_idxs(x):
-            title = []
-            try:
-                for i, word in enumerate(tokenizer.tokenize(x.lower())):
-                    #word=word.strip('-+=.\'')
-                    if word in word_dict:
-                        title.append(word_dict[word])
-                title=title[:self.conf.n_words_title]+[0 for _ in range(self.conf.n_words_title-len(title))]
-            except:
-                title = [0 for _ in range(self.conf.n_words_title)]
-
-            return title
-        def get_abst_word_idxs(x):
-            abstract=[]
-            try:
-                for i, word in enumerate(tokenizer.tokenize(x.lower())):
-                    if word in word_dict:
-                        abstract.append(word_dict[word])
-                abstract=abstract[:self.conf.n_words_abst]+[0 for _ in range(self.conf.n_words_abst-len(abstract))]
-            except:
-                abstract = [0 for _ in range(self.conf.n_words_abst)]
-
-            return abstract
-        train_news['Title']=train_news['Title'].apply(lambda x :get_title_word_idxs(x))
-        train_news['Abstract']=train_news['Abstract'].apply(lambda x :get_abst_word_idxs(x))
-
-        train_news[['News_ID', 'Title', 'Abstract']].to_csv(os.path.join(config.data_path, 'demo_news_words.csv'),index=False,header=None)
-        print('Finish news preprocessing for training')
-
 
 class Log_Processor(object):
     def __init__(self,config):
@@ -547,27 +360,15 @@ if __name__=='__main__':
     #config.train_data='list_train_datas.pkl'
     #config.sample_size=15
     NP=News_Processor(config)
-    #NP._get_all_news_info()
     #NP=Demo_News_Processor(config)
-    #NP._count_news_words()
+    NP._count_news_words()
     # NP._get_word_embeds()
     #NP._get_bert_embeds()
     #news_info=NP._get_all_news_info()
     
-    LP=Log_Processor(config)
-    LP.build_dataset(4)
-    LP.build_dataset(3)
+    # LP=Log_Processor(config)
+    # LP.build_dataset(4)
+    # LP.build_dataset(3)
 
-    #LP._count_news_ids()
-    # with open(config.data_path+'dev_datas.pkl','rb') as f:
-    #     data_list=pickle.load(f)
-    # print(len(data_list[0]))
-
-    #LP.build_dataset(0)
-
-    # LP.build_dataset(1)
-    # LP.build_dataset(2)
-    # #LP._get_small_dev_label()
-    # LP._get_dev_label()
 
 

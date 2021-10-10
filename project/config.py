@@ -38,7 +38,7 @@ class Config(object):
 
         self.word_freq_threshold=3 # 字典构建中 词汇低频阈值
 
-        self.random_seed=1998 # 随机种子
+        self.random_seed=1024 # 随机种子
         
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
 
