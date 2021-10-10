@@ -7,7 +7,7 @@ class Config(object):
     """配置参数"""
     def __init__(self, model_name='NRMS',dataset='../MIND'):
         self.model_name = model_name
-        self.data_path='./data_processed/'
+        self.data_path='./dataset_processed/'
         self.train_path = dataset + '/train/'                                # 训练集
         self.dev_path = dataset + '/dev/'                                    # 验证集
         self.test_path = dataset + '/test/'                                  # 测试集
@@ -16,7 +16,7 @@ class Config(object):
 
         # BERT 新闻向量
         self.bert_embedding_pretrained =    'news_embeds_512.npz'
-        self.word_embedding_pretrained =   'all_word_embedding_v3.npz'
+        self.word_embedding_pretrained =   'all_word_embedding.npz'
         self.entity_embedding_pretrained=  'entitiy_embeds.npz'
 
         self.mode='large'  # 指定数据集 large /demo 

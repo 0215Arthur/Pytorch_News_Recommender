@@ -13,7 +13,7 @@ import time
 from datetime import timedelta
  
 import pickle
- 
+import json
 import gc
 import pandas as pd 
 #from sklearn.utils import shuffle
@@ -75,31 +75,40 @@ class News_Processor(object):
         
         """
         print('Start word embedding...')
-        word_dict = dict(pd.read_csv(os.path.join(self.conf.data_path, 'word_dict.csv'), sep='\t', na_filter=False, header=0).values.tolist())
+        word_dict = dict(pd.read_csv(os.path.join(self.conf.data_path, self.dataset + '/word_dict.csv'), sep='\t', na_filter=False, header=0).values.tolist())
+        # print(word_dict)
+        # glove_embedding = pd.read_table('./data/glove.840B.300d.txt', sep=' ', header=None, index_col=0, quoting=3)
+        embeds={}
+        with open('./data/glove.840B.300d.txt', 'r') as f:
+            for i, line in tqdm(enumerate(f)):
+                array = line.strip().split(' ')
+                if array[0] in word_dict:
+                    embeds[array[0]] = array[1:]
 
-        glove_embedding = pd.read_table('./glove.840B.300d.txt', sep=' ', header=None, index_col=0, quoting=3)
         embedding_result = np.random.normal(size=(len(word_dict) , 300))
         embedding_result=np.concatenate((np.zeros((1,300)),embedding_result))
         print(embedding_result.shape)
         word_missing = 0
-       # return 
-        #embedding_result=glove_embedding.loc[word_dict.items()]
 
         with tqdm(total=len(word_dict), desc="Generating word embedding") as p:
             for k, v in word_dict.items():
             # print(k,v)
-                if k in glove_embedding.index:
-                    embedding_result[v] = glove_embedding.loc[k].tolist()
+                if k in embeds:
+                    embedding_result[v] = embeds[k]
                 else:
                     word_missing += 1
                 p.update(1)
         print('\ttotal_missing_word:', word_missing)
         print('Finish word embedding')
         
-        #embeds=np.load(os.path.join(config.data_, 'word_embedding.npy'))
-        np.savez_compressed(os.path.join(self.conf.data_path, 'all_word_embedding_v3.npz'), embeddings=embedding_result)
-        print('npz saved to ./data_processed/all_word_embeds_v3.npz')
+        np.savez_compressed(os.path.join(self.conf.data_path, self.dataset + '/' + self.conf.word_embedding_pretrained), embeddings=embedding_result)
+        print('npz saved to ./data_processed/{}/{}'.format(self.dataset, self.conf.word_embedding_pretrained))
 
+    def _update_id(self,df,field):
+        labels = pd.factorize(df[field])[0]
+        kwargs = {field: labels}
+        df = df.assign(**kwargs)
+        return df
     @log_exec_time
     def _get_all_news_info(self,cols=['News_ID','Category','SubCategory']):
         """
@@ -107,6 +116,9 @@ class News_Processor(object):
               cols: the detail columns (list)
         return all news info (DataFrame format)
         """
+        cols = ['News_ID','Category','SubCategory',
+                                                'Title','Abstract',
+                                                'Title Entities','Abstract Entites']
         news_info=pd.read_table(self.train_path+'news.tsv',header=None,sep='\t',
                                     names=['News_ID','Category','SubCategory',
                                             'Title','Abstract','URL',
@@ -117,24 +129,32 @@ class News_Processor(object):
                                                 'Title Entities','Abstract Entites'])[cols]
 
         news_info=pd.concat([news_info_2,news_info])
-    
-        train_lens=news_info.shape[0]
+        def parse_entity(x):
+            if isinstance(x, float):
+                return None
+            x=json.loads(x)#["WikidataId"]
+            entities=[]
+            for _ in x:
+                if _["Confidence"] > 0.6:
+                    entities.append(_["WikidataId"])
+            return entities
         news_info.drop_duplicates(['News_ID' ],inplace=True,keep='first')
         print('train_set + dev_set : the number of News',news_info.shape)
         news_info=news_info.dropna(axis=0,subset = ["Title"])
         #print(new_lens-old_lens)
         print(news_info.shape[0])
-        print(news_info["News_ID"].nunique())
+        news_info=self._update_id(news_info, "Category")
+        news_info=self._update_id(news_info, "SubCategory")
+        news_info["Title Entities"]=news_info["Title Entities"].apply(lambda x: parse_entity(x))
+        news_info["Abstract Entites"]=news_info["Abstract Entites"].apply(lambda x: parse_entity(x))
+
         return news_info[cols]
     
     def _count_news_words(self):
         """
         func: count the words of the all news to remap the words to IDs.
         """
-        train_news=self._get_all_news_info(cols=['News_ID','Title','Abstract'])
-        # print(train_news['Title'].head())
-        # print(word_tokenize("I Was An NBA Wife. Here's How It Affected My M"))
-        #return 
+        train_news=self._get_all_news_info()
         def clean_words(x):
             try:
                 return x.lower().translate(str.maketrans('', '', digits))
@@ -148,29 +168,22 @@ class News_Processor(object):
         with tqdm(total=len(train_news), desc='Processing news') as p:
             for row in train_news.itertuples():
                 for word in tokenizer.tokenize(row.Title):
-                    # word=word.strip('-+=.\'')
-                    # if word not in self.stop_words:
-                    word_freq_dict[word] = word_freq_dict.get(word, 0) + 1
-
-                try:
-                    #abst=row.Abstract.lower().translate(str.maketrans('', '', digits))
-                    for word in tokenizer.tokenize(row.Abstract):
-                        # word=word.strip('-+=.\'')
-                        # if word not in self.stop_words:
+                    word=word.strip('-+=.\'')
+                    if word not in self.stop_words:
                         word_freq_dict[word] = word_freq_dict.get(word, 0) + 1
+                try:
+                    for word in tokenizer.tokenize(row.Abstract):
+                        word=word.strip('-+=.\'')
+                        if word not in self.stop_words:
+                            word_freq_dict[word] = word_freq_dict.get(word, 0) + 1
                 except:
                     pass
                 p.update(1)
-        # word_freq_dict = sorted(word_freq_dict.items(), key=lambda d:d[1], reverse = True)
-        # print(word_freq_dict[:40])
-        # return 
-
         for k, v in word_freq_dict.items():
             if v >= self.conf.word_freq_threshold:
                 word_dict[k] = len(word_dict) + 1
-        #print(word_dict.items())
     
-        pd.DataFrame(word_dict.items(), columns=['word', 'index']).to_csv(os.path.join(config.data_path, 'word_dict.csv'),
+        pd.DataFrame(word_dict.items(), columns=['word', 'index']).to_csv(os.path.join(self.conf.data_path, self.dataset + '/word_dict.csv'),
                                                                             sep='\t', index=False)
         
 
@@ -183,7 +196,6 @@ class News_Processor(object):
             title = []
             try:
                 for i, word in enumerate(tokenizer.tokenize(x.lower())):
-                    #word=word.strip('-+=.\'')
                     if word in word_dict:
                         title.append(word_dict[word])
                 title=title[:self.conf.n_words_title]+[0 for _ in range(self.conf.n_words_title-len(title))]
@@ -204,11 +216,23 @@ class News_Processor(object):
             return abstract
         train_news['Title']=train_news['Title'].apply(lambda x :get_title_word_idxs(x))
         train_news['Abstract']=train_news['Abstract'].apply(lambda x :get_abst_word_idxs(x))
-
-        train_news[['News_ID', 'Title', 'Abstract']].to_csv(os.path.join(config.data_path, 'news_words.csv'),index=False,header=None)
+        tl_e = train_news['Title Entities'].tolist()
+        ab_e = train_news['Abstract Entites'].tolist()
+        entities = []
+        for i, _ in enumerate(tl_e):
+            if _ is None or len(_) < 1 :
+                entities.append(ab_e[i])
+                continue
+            if ab_e[i] is None or len(ab_e[i]) < 1:
+                entities.append(_)
+                continue
+            entities.append(list(set(_) | set(ab_e[i])))
+        train_news["Entities"] = entities
+        train_news[['News_ID', 'Title', 'Abstract', 'Category','SubCategory', 'Entities']]\
+            .to_csv(os.path.join(self.conf.data_path,  self.dataset + '/news.csv'),index=False,header=None)
         print('Finish news preprocessing for training')
 
-class Log_Processor(object):
+class MIND_Log_Processor(object):
     def __init__(self,config):
         self.BATCH_SIZE=10000
         self.impression_df=None
@@ -361,10 +385,8 @@ if __name__=='__main__':
     #config.sample_size=15
     NP=News_Processor(config)
     #NP=Demo_News_Processor(config)
-    NP._count_news_words()
-    # NP._get_word_embeds()
-    #NP._get_bert_embeds()
-    #news_info=NP._get_all_news_info()
+    # NP._count_news_words()
+    NP._get_word_embeds()
     
     # LP=Log_Processor(config)
     # LP.build_dataset(4)
