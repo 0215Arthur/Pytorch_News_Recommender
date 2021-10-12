@@ -23,6 +23,7 @@ from nltk.tokenize import word_tokenize,RegexpTokenizer
 from string import digits
 from multiprocessing import Pool
 from multiprocessing import cpu_count 
+from joblib import Parallel, delayed
 #from random  import shuffle
 try:
     from bert_serving.client import BertClient
@@ -109,6 +110,7 @@ class News_Processor(object):
         kwargs = {field: labels}
         df = df.assign(**kwargs)
         return df
+    
     @log_exec_time
     def _get_all_news_info(self,cols=['News_ID','Category','SubCategory']):
         """
@@ -228,119 +230,92 @@ class News_Processor(object):
                 continue
             entities.append(list(set(_) | set(ab_e[i])))
         train_news["Entities"] = entities
+        train_news["Category"] += 1
+        train_news["SubCategory"] += 1
         train_news[['News_ID', 'Title', 'Abstract', 'Category','SubCategory', 'Entities']]\
-            .to_csv(os.path.join(self.conf.data_path,  self.dataset + '/news.csv'),index=False,header=None)
+            .to_csv(os.path.join(self.conf.data_path,  self.dataset + '/news.csv'),index=False)
+        print("Category num ", train_news["Category"].max())
+        print("SubCategory num ", train_news["SubCategory"].max())
+        # 为方便取数据，将其改为json格式存储
+        train_news=train_news[['News_ID', 'Title', 'Abstract', 'Category','SubCategory', 'Entities']]
+        news_json = json.loads(train_news.set_index("News_ID").to_json(orient='index'))
+        print(type(news_json))
+        with open(os.path.join(self.conf.data_path, self.dataset + "/news.pkl"),'wb') as f:
+            pickle.dump(news_json,f)
         print('Finish news preprocessing for training')
 
 class MIND_Log_Processor(object):
     def __init__(self,config):
-        self.BATCH_SIZE=10000
-        self.impression_df=None
+        self.BATCH_SIZE=50000
         self.conf=config
-        self._type=0
+        self.data_type=0
     
     def _get_dev_label(self):
         dev_behaviors = pd.read_table(os.path.join(self.conf.dev_path,'behaviors.tsv'), header=None, 
                                     names=['user_id','time','history','impressions'])
         dev_behaviors['y_true']=dev_behaviors['impressions'].apply(lambda x : ' '.join([(_[-1]) for _ in x.split(' ') ]) )
-        dev_behaviors[['user_id','y_true']].to_csv(os.path.join(self.conf.data_path, 'dev_behaviors.csv'), index=False)
-    
-    def _get_small_dev_label(self):
-        dev_behaviors = pd.read_table(os.path.join(self.conf.small_dev_path,'behaviors.tsv'), header=None, 
-                                    names=['user_id','time','history','impressions'])
-        dev_behaviors['y_true']=dev_behaviors['impressions'].apply(lambda x : ' '.join([(_[-1]) for _ in x.split(' ') ]) )
-        dev_behaviors[['user_id','y_true']].to_csv(os.path.join(self.conf.data_path, 'small_dev_behaviors.csv'), index=False)
-
-    def _count_news_ids(self):
-        data_paths=[self.conf.train_path,self.conf.dev_path,self.conf.test_path,self.conf.small_train_path,self.conf.small_dev_path]
-        df=pd.read_csv(self.conf.train_path+'behaviors.tsv',header=None,sep='\t',
-                                names=['user_id','time','history','impressions'] )
-        train_ids=set()
-        # for h in tqdm(df['history'].unique()):
-        #     if isinstance(h,float):
-        #         continue
-        #     for _id in h.split(' '):
-        #         train_ids.add(_id)
-
-        for h in tqdm(df['impressions'].tolist()):
-            for _id in h.split(' '):
-                train_ids.add(_id[:-2])
-        print('train news nums:',len(train_ids))
-
-  
-
-        dev_df=pd.read_csv(self.conf.dev_path+'behaviors.tsv',header=None,sep='\t',
-                                names=['user_id','time','history','impressions'] )
-
-        dev_ids=set()
-        # for h in tqdm(dev_df['history'].unique()):
-        #     if isinstance(h,float):
-        #         continue
-        #     for _id in h.split(' '):
-        #         dev_ids.add(_id)
-        for h in tqdm(dev_df['impressions'].tolist()):
-            for _id in h.split(' '):
-                dev_ids.add(_id[:-2])
-
-        print('dev news nums:',len(dev_ids))
-        print('new doc:',len(dev_ids-train_ids))
-
-        # test_ids=set()
-        # dev_df=pd.read_csv(self.conf.test_path+'behaviors.tsv',header=None,sep='\t',
-        #                         names=['user_id','time','history','impressions'] )
-        # for h in tqdm(dev_df['impressions'].tolist()):
-        #     for _id in h.split(' '):
-        #         dev_ids.add(_id[:-2])
-        # print('train news nums:',len(train_ids))
-
-
-
-                            
+        dev_behaviors[['user_id','y_true']].to_csv(os.path.join(self.conf.data_path, 'dev_behaviors.csv'), index=False)                            
 
     @log_exec_time
-    def build_dataset(self,_type=0):
+    def build_dataset(self,train_ratio = 0.3):
         """
         select the proper logs and build the basic data format 
-
-        train_type:  每条数据：history取最新条记录id， imp: 取1个正例+4个负例
+        K: 负采样数量 
+        :  每条数据：history取最新条记录id， imp: 取1个正例+4个负例
         数据集结构：每条impression数据用一个嵌套list存储[[历史新闻序列],[点击序列]]: 
             -  历史新闻序列(list格式，<=15); 
-            -  点击序列(list格式，列表每个元素为正例+负例的形式(10个元素))：[[pos1,neg1,...],[pos2,neg2,....],......,[]] 
+            -  点击序列(list格式，列表每个元素为正例+负例的形式(1+K个元素))：[[pos1,neg1,...],[pos2,neg2,....],......,[]] 
 
         """
         # 0 1 2 3 4 
-        data_paths=[self.conf.train_path,self.conf.dev_path,self.conf.test_path,self.conf.small_train_path,self.conf.small_dev_path]
 
-        self.impression_df=pd.read_table(data_paths[_type]+'behaviors.tsv',header=None,sep='\t',
+        impression_df=pd.read_table('./data/MIND/train/behaviors.tsv',header=None,sep='\t',
                                 names=['user_id','time','history','impressions'] )
-                            
-        # 训练集的数据需要删除空行/ 验证集数据进行简单填充
-        old_type=_type#s.copy()
-        _type=_type%3
+        
+        dev_df=pd.read_table('./data/MIND/dev/behaviors.tsv',header=None,sep='\t',
+                                names=['user_id','time','history','impressions'] )
 
-        if _type==0:
-            self.impression_df=self.impression_df.dropna()
-        else:
-            self.impression_df.fillna(method='backfill',inplace=True)
-        self._type=_type
-
-        num_batch=self.impression_df.shape[0]//self.BATCH_SIZE+1
+        impression_df=impression_df.dropna().reset_index(drop=True)
+        dev_df=dev_df.dropna().reset_index(drop=True)
+        train_df=impression_df.sample(frac=train_ratio).reset_index(drop=True)
         random.seed(config.random_seed)
+        print(len(train_df))
+        print(len(dev_df))
+        print("build dataset...")
+        # pool = Pool(cpu_count()//2) #cpu_count()//2
+        # res = pool.map(self._build_data_sample, range(num_batch))
+        # pool.close()
+        # pool.join()
+        res = Parallel(n_jobs=16)(
+            delayed(self._build_data_sample)(train_df, i, 0) for i in range(train_df.shape[0]//self.BATCH_SIZE+1)
+        )
+        val_num = int(0.5 * len(dev_df))
+        val_df = dev_df[:val_num]
+        test_df = dev_df[val_num:]
+        print("build val dataset...")
+        val_res = Parallel(n_jobs=16)(
+            delayed(self._build_data_sample)(val_df, i, 1) for i in range(val_df.shape[0]//self.BATCH_SIZE+1)
+        )
+
+        test_res = Parallel(n_jobs=16)(
+            delayed(self._build_data_sample)(test_df, i, 1) for i in range(test_df.shape[0]//self.BATCH_SIZE+1)
+        )
+        with open(self.conf.data_path+self.conf.test_data,'wb') as f:
+            pickle.dump(self.parse_data(test_res),f)
+
+        with open(self.conf.data_path+self.conf.train_data,'wb') as f:
+            pickle.dump(self.parse_data(res),f)
+
+        with open(self.conf.data_path+self.conf.val_data,'wb') as f:
+            pickle.dump(self.parse_data(val_res),f)
         
-        pool = Pool(cpu_count()//4)
-        res = pool.map(self._build_data_sample, range(num_batch))
-        pool.close()
-        pool.join()
-        print(old_type)
-        datas=[self.conf.train_data,self.conf.dev_data,self.conf.test_data,'small_train.pkl','small_dev.pkl']
-        
-    
-        #res=get_Train_Samples(impression_df.iloc[:100])
-        with open(self.conf.data_path+datas[old_type],'wb') as f:
-            pickle.dump(res,f)
-    
-    def _build_data_sample(self,_id):
-        df=self.impression_df.iloc[_id*self.BATCH_SIZE:(_id+1)*self.BATCH_SIZE]
+
+
+    def _build_data_sample(self, df, _id, data_type):
+        """
+        [user_id, [his_list], [[cand_list],[cand_list]]]
+        """
+        df=df.iloc[_id*self.BATCH_SIZE:(_id+1)*self.BATCH_SIZE]
         
         user_ids=df['user_id'].tolist()
 
@@ -353,43 +328,51 @@ class MIND_Log_Processor(object):
             tmp=[]
             tmp.append(user_ids[i])
             tmp.append(_h)
-            if self._type==0:
-                
-                neg_idx=[_[:-2] for _ in imps[i] if _[-1]=='0']
-                pos_idx=[_[:-2] for _ in imps[i] if _[-1]=='1' ]
-                neg_lens=len(neg_idx)
-                random.shuffle(neg_idx)
-                imps_list=[]
-                for i,_p in enumerate(pos_idx):
-                    imps_list.append([_p]+neg_idx[i*self.conf.sample_size:(i+1)*self.conf.sample_size])                
-                tmp.append(imps_list)
-
-            elif self._type==1: # dev dataset
-
-                tmp.append([[_[:-2] for _ in imps[i]]])
-
+            neg_idx=[_[:-2] for _ in imps[i] if _[-1]=='0']
+            pos_idx=[_[:-2] for _ in imps[i] if _[-1]=='1' ]
+            # random.shuffle(neg_idx)
+            if data_type == 0:
+                sample_size = self.conf.negsample_size
             else:
-
-                tmp.append([[_ for _ in imps[i]]])
-            
+                sample_size = self.conf.max_candidate_size - 1
+            imps_list=[]
+            for i,_p in enumerate(pos_idx):
+                imps_list.append([_p]+neg_idx[i*sample_size:(i+1)*sample_size])                
+            tmp.append(imps_list)
             res.append(tmp)
-
-    
+        if _id % 5 == 0 and _id > 0:
+            print("precoessed {} samples".format(_id * self.BATCH_SIZE))
         return   res
+    
+    def parse_data(self,data):
+        """
+        将数据拆分为训练格式
+        ([historical news_ids],[impression_ids])
+        """
+        final_samples=[]
+        for _ in data:
+            for row in _:
+                for samples in row[2]:
+                    final_samples.append((row[1], samples))
+                    if len(final_samples) == 10000000:
+                        return final_samples
+        return final_samples
+
 
 
 if __name__=='__main__':
 
     config=Config()
+    config.__MIND__()
     #config.train_data='list_train_datas.pkl'
     #config.sample_size=15
     NP=News_Processor(config)
     #NP=Demo_News_Processor(config)
     # NP._count_news_words()
-    NP._get_word_embeds()
+    #NP._get_word_embeds()
     
-    # LP=Log_Processor(config)
-    # LP.build_dataset(4)
+    LP=MIND_Log_Processor(config)
+    LP.build_dataset()
     # LP.build_dataset(3)
 
 

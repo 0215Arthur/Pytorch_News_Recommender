@@ -5,3 +5,4 @@ data/
 dataset_processed/
 save_model/
 logs/
+./model/

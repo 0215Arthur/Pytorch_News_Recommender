@@ -32,7 +32,10 @@ class Model(nn.Module):
 
     def forward(self, batch):
         if self.train:
-            if self.n_GPUs > 1 and not self.cpu:
-                return P.data_parallel(self.model, batch, range(self.n_GPUs))
-            else:
-                return self.model(batch)
+            # if self.n_GPUs > 1 and not self.cpu:
+            #     return P.data_parallel(self.model, batch, range(self.n_GPUs))
+            # else:
+            return self.model(batch)
+        else:
+            self.model.eval()
+            return self.model(batch)

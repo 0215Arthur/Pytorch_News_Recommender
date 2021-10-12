@@ -17,9 +17,6 @@ parser = argparse.ArgumentParser(description='MIND')
 parser.add_argument('--model', type=str, required=True, help='choose the proper model')
 parser.add_argument('--dataset', default='large', type=str, required=True,help='large dataset or demo dataset')
 parser.add_argument('--test', default=False, type=bool, help='run the test dataset')
-#parser.add_argument('--test', default=True, type=bool, help='run the test dataset')
-parser.add_argument('--n_GPUs', type=int, default=1,
-                    help='number of GPUs')
 parser.add_argument('--load', type=str, default=None,
                     help='load the pretrained model ckpt file')
 parser.add_argument('--description', type=str, default=None,
