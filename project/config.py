@@ -11,13 +11,13 @@ class Config(object):
         """
         self.model_name = model_name
         self.data_path='./dataset_processed/'
-        self.word_embedding_pretrained =  f'/{dataset}/all_word_embedding.npz'
-        self.entity_embedding_pretrained=  f'/{dataset}/entitiy_embeds.npz'
+        self.word_embedding_pretrained =  f'{dataset}/all_word_embedding.npz'
+        self.entity_embedding_pretrained=  f'{dataset}/entitiy_embeds.npz'
         self.save_path =   './save_model/'        # 模型训练结果
         self.log_path =  './logs/' + self.model_name
-        self.train_data=f'/{dataset}/train_datas.pkl'
-        self.val_data=f'/{dataset}/val_datas.pkl'
-        self.test_data=f'/{dataset}/test_datas.pkl'
+        self.train_data=f'{dataset}/train_datas.pkl'
+        self.val_data=f'{dataset}/val_datas.pkl'
+        self.test_data=f'{dataset}/test_datas.pkl'
 
         self.save_flag=False  # 模型存储标志
 
@@ -30,7 +30,7 @@ class Config(object):
         
         self.word_embed_size=300                                      #单词嵌入维度
         self.num_epochs = 5                                           # epoch数
-        self.eval_step=5000
+        self.eval_step=100
         self.batch_size = 256                                          # mini-batch大小
         self.learning_rate = 1e-3   
         self.dropout = 0.2                                              # 随机失活
@@ -52,8 +52,7 @@ class Config(object):
         self.n_words_abst=40   # 摘要单词长度
         self.history_len=50  # 历史序列长度
         self.negsample_size=4   # 负样本采样规模
-        self.max_candidate_size=200  # 候选样本最大长度
-    
+        self.max_candidate_size=100  # 候选样本最大长度
     """
     NRMS
     """

@@ -86,6 +86,7 @@ def train(config, model, train_iter, dev_iter ):
         print('Epoch [{}/{}]'.format(epoch + 1, config.num_epochs))
         # scheduler.step() # 学习率衰减
         loss_records=[]
+        # auc=evaluate(model,dev_iter)
         for i, datas in enumerate(train_iter):
             
             outputs = model(datas)
@@ -114,14 +115,14 @@ def train(config, model, train_iter, dev_iter ):
                 loss_list=[]
             total_batch += 1
             if total_batch % config.eval_step == 0 and total_batch>0: 
-                auc=evaluate(config,model,dev_iter,AUC_best)
+                auc=evaluate(model,dev_iter)
                 log_res(config,auc,total_batch)
-                if auc>AUC_best:
-                    AUC_best=auc
-                    if config.save_flag:
-                        torch.save(model.state_dict(), config.save_path+'T{}_{}_epoch{}_iter_{}_auc_{:.3f}.ckpt'.format(time.strftime('%m-%d_%H.%M'),config.model_name,config.num_epochs,total_batch,AUC_best))
+                # if auc>AUC_best:
+                #     AUC_best=auc
+                #     if config.save_flag:
+                #         torch.save(model.state_dict(), config.save_path+'T{}_{}_epoch{}_iter_{}_auc_{:.3f}.ckpt'.format(time.strftime('%m-%d_%H.%M'),config.model_name,config.num_epochs,total_batch,AUC_best))
 
-        auc=evaluate(config,model,dev_iter,AUC_best)
+        auc=evaluate(model,dev_iter)
         log_res(config,auc,'epoch_{}'.format(epoch))
         if auc>AUC_best:
             AUC_best=auc
@@ -134,19 +135,14 @@ def train(config, model, train_iter, dev_iter ):
  
 
 def _cal_score(y_true, pred):
-    
     auc = auc_score(y_true, pred)
     mrr = mrr_score(y_true, pred)
     ndcg5 = ndcg_score(y_true, pred, 5)
     ndcg10 = ndcg_score(y_true, pred, 10)
     return [auc, mrr, ndcg5, ndcg10]
 
-def evaluate(config, model, data_iter,AUC_best):
+def evaluate(model, data_iter):
     model.eval()
-    AUC_list=[]
-    MRR_list=[]
-    nDCG5_list=[]
-    nDCG10_list=[]
     res=[]
     global rank_score
     scores=[]
@@ -155,16 +151,17 @@ def evaluate(config, model, data_iter,AUC_best):
             for i, datas in tqdm(enumerate(data_iter)):
                 #print(datas)
                 outputs = model(datas).cpu()
+                print(outputs)
                 scores.append(outputs)
                 p.update(1)
         rank_score=np.concatenate(scores)
         y_true = np.array([1] + [0 for _ in range(rank_score.shape[1] - 1)])
         res = Parallel(n_jobs=4)(
-            delayed(_cal_score)(y_true, i) for i in range(rank_score)
+            delayed(_cal_score)(y_true, i) for i in (rank_score)
         )
         final_scores = np.array(res).mean(axis=1)
 
-        print("auc:{}\tmrr:{}\tndcg@5:{}\tndcg@10:{}".format(final_scores[0],\
+        print("auc:{:.4f}\tmrr:{:.4f}\tndcg@5:{:.4f}\tndcg@10:{:.4f}".format(final_scores[0],\
                                 final_scores[1],\
                                 final_scores[2],\
                                 final_scores[3]))
@@ -184,7 +181,6 @@ if __name__=='__main__':
     torch.backends.cudnn.deterministic = True
     config=Config('NRMS', 'MIND')
     config.__nrms__()
-    
     with open(os.path.join(config.data_path,config.train_data), 'rb') as f:
         train_data=pickle.load(f)
     with open(os.path.join(config.data_path,config.val_data), 'rb') as f:
@@ -200,7 +196,7 @@ if __name__=='__main__':
                               shuffle=True,
                               pin_memory=False)
 
-    val_data=MyDataset(config,val_data, news_dict)
+    val_data=MyDataset(config,val_data, news_dict, type=1)
     val_iter = DataLoader(dataset=val_data, 
                               batch_size=config.batch_size, 
                               num_workers=4,

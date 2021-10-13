@@ -47,7 +47,7 @@ class NewsEncoder(torch.nn.Module):
         # #self.Linear= nn.Linear(config.final_embed_size, config.final_embed_size)
         # self.Linear=nn.Sequential(*news_dense)
     # @torchsnooper.snoop()
-    def forward(self, data,attn_masks=None):
+    def forward(self, data, attn_masks=None):
         '''
         config:
             news:
@@ -187,5 +187,19 @@ class Model(torch.nn.Module):
         pred =  torch.sum(user_vector*candidate_vector,2)
         if batch['candidate_mask'] is not None:
             pred = pred.masked_fill(sample_masks == 0, -1e9)
+
+        return pred
+    
+    def predict(self, batch):
+        """
+        快速进行评估测试
+        """
+        self.news_embeds = None
+        browsed_vector = self.news_embeds(batch['browsed_ids'].to(self.config.device))
+        user_vector = self.user_encoder(browsed_vector,batch['browsed_mask'].to(self.config.device)).unsqueeze(1)
+        candidate_vector =self.news_embeds(batch['cand_ids'].to(self.config.device))
+        pred =  torch.sum(user_vector*candidate_vector,2)
+        if batch['candidate_mask'] is not None:
+            pred = pred.masked_fill(batch['candidate_mask'].to(self.config.device) == 0, -1e9)
 
         return pred

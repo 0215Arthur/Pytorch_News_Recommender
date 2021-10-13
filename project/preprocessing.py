@@ -238,6 +238,9 @@ class News_Processor(object):
         print("SubCategory num ", train_news["SubCategory"].max())
         # 为方便取数据，将其改为json格式存储
         train_news=train_news[['News_ID', 'Title', 'Abstract', 'Category','SubCategory', 'Entities']]
+        train_news=train_news.reset_index()
+        train_news["index"] += 1
+        # print(train_news.columns)
         news_json = json.loads(train_news.set_index("News_ID").to_json(orient='index'))
         print(type(news_json))
         with open(os.path.join(self.conf.data_path, self.dataset + "/news.pkl"),'wb') as f:
@@ -301,13 +304,13 @@ class MIND_Log_Processor(object):
             delayed(self._build_data_sample)(test_df, i, 1) for i in range(test_df.shape[0]//self.BATCH_SIZE+1)
         )
         with open(self.conf.data_path+self.conf.test_data,'wb') as f:
-            pickle.dump(self.parse_data(test_res),f)
+            pickle.dump(self.parse_data(test_res, 1),f)
 
         with open(self.conf.data_path+self.conf.train_data,'wb') as f:
             pickle.dump(self.parse_data(res),f)
 
         with open(self.conf.data_path+self.conf.val_data,'wb') as f:
-            pickle.dump(self.parse_data(val_res),f)
+            pickle.dump(self.parse_data(val_res, 1),f)
         
 
 
@@ -344,7 +347,7 @@ class MIND_Log_Processor(object):
             print("precoessed {} samples".format(_id * self.BATCH_SIZE))
         return   res
     
-    def parse_data(self,data):
+    def parse_data(self,data,type=0):
         """
         将数据拆分为训练格式
         ([historical news_ids],[impression_ids])
@@ -352,6 +355,8 @@ class MIND_Log_Processor(object):
         final_samples=[]
         for _ in data:
             for row in _:
+                if type == 0 and len(row[1]) < 5:
+                    continue
                 for samples in row[2]:
                     final_samples.append((row[1], samples))
                     if len(final_samples) == 10000000:
