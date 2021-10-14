@@ -36,9 +36,9 @@ from config import Config
 
 class NewsDataset(Dataset):
     def __init__(self, news_dict):
-        super(MyDataset, self).__init__()
-        self.bacthes=news_dict.items()
-    
+        super(NewsDataset, self).__init__()
+        self.bacthes=list(news_dict.items())
+        print("news num: ",len(self.bacthes)) 
     def __len__(self):
         return len(self.bacthes)
 
@@ -49,14 +49,8 @@ class NewsDataset(Dataset):
         # 初始化
         browsed_titles=np.array(data["Title"],dtype=np.int)
         browsed_absts=np.array(data["Abstract"],dtype=np.int)
-        browsed_categ_ids=data["Category"]
-        browsed_subcateg_ids=data["SubCategory"]
-        
-        # browsed_titles[:x,:]=np.array([self.news_dict[i]["Title"] for i in data[0]] )
-        # browsed_absts[:x,:]=np.array([self.news_dict[i]["Abstract"]  for i in data[0]] )
-
-        # browsed_categ_ids[:x]=np.array([self.news_dict[i]["Category"]  for i in data[0]] )
-        # browsed_subcateg_ids[:x]=np.array([self.news_dict[i]["SubCategory"]  for i in data[0]] )
+        browsed_categ_ids=torch.LongTensor([data["Category"]])
+        browsed_subcateg_ids=torch.LongTensor([data["SubCategory"]])
 
         return {'ids': browsed_ids,
                 'titles':browsed_titles,\
@@ -134,7 +128,8 @@ class MyDataset(Dataset):
                 'browsed_categ_ids':browsed_categ_ids,\
                 'browsed_subcateg_ids':browsed_subcateg_ids,\
                 'browsed_mask':browsed_mask,\
-                'candidate_ids': browsed_ids,
+                'candidate_ids': candidate_ids,
+                'candidate_lens':y,\
                 'candidate_titles':candidate_titles,\
                 'candidate_absts':candidate_absts,\
                 #'candidate_entity_ids':candidate_entity_ids,\
@@ -154,8 +149,10 @@ if __name__ == "__main__":
     
     with open("./dataset_processed/MIND/train_datas.pkl", 'rb') as f:
         train_data=pickle.load(f)
+    
     with open(os.path.join(config.data_path, "MIND/news.pkl"),'rb') as f:
         news_dict=pickle.load(f)
+    print(len(news_dict))
     data=MyDataset(config,train_data, news_dict)
     train_iter = DataLoader(dataset=data, 
                               batch_size=256, 
@@ -163,8 +160,17 @@ if __name__ == "__main__":
                               drop_last=False,
                               shuffle=False,
                               pin_memory=False)
-    for i,_ in enumerate(train_iter):
-        print(i)
+
+    data=NewsDataset(news_dict)
+    news_iter = DataLoader(dataset=data, 
+                              batch_size=256, 
+                              num_workers=4,
+                              drop_last=False,
+                              shuffle=False,
+                              pin_memory=False)
+    # for i,_ in enumerate(news_iter):
+    #     print(i)
+    #     print(_["ids"])
         #print(i)
         #break
     #print(train_iter.__len__())

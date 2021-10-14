@@ -30,7 +30,7 @@ class Config(object):
         
         self.word_embed_size=300                                      #单词嵌入维度
         self.num_epochs = 5                                           # epoch数
-        self.eval_step=100
+        self.eval_step=200
         self.batch_size = 256                                          # mini-batch大小
         self.learning_rate = 1e-3   
         self.dropout = 0.2                                              # 随机失活
@@ -60,6 +60,7 @@ class Config(object):
         self.title_size=512 
         self.feature_size=712
         self.news_feature_size=600
+        self.news_nums=104151
         # self.bert_embed_size=512
 
         self.query_vector_dim=200  # additive attn 向量维度

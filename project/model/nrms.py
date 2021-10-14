@@ -190,14 +190,34 @@ class Model(torch.nn.Module):
 
         return pred
     
+    def update_rep(self, news_iter, batch_size=1280):
+        """
+        更新得到新闻标注
+        """
+        self.news_embeds = torch.Tensor(self.config.news_nums + 1, self.config.news_feature_size).cuda()
+
+        for i,batch in enumerate(news_iter):
+            if len(batch['titles']) == batch_size:
+                news_vector = self.news_encoder((batch['titles'].to(self.device).view(256, batch_size // 256, -1 ),\
+                                                batch['absts'].to(self.device).view(256, batch_size // 256, -1 ))).view(-1, self.config.news_feature_size)
+                self.news_embeds[i*batch_size + 1: (i+1)*batch_size + 1].copy_(news_vector)
+            else:
+                sz = len(batch['titles'])
+                news_vector = self.news_encoder((batch['titles'].to(self.device).view(sz, 1, -1),\
+                                                batch['absts'].to(self.device).view(sz, 1, -1 ))).view(-1, self.config.news_feature_size)
+                self.news_embeds[i*batch_size + 1:].copy_(news_vector)
+        return 
+
+    
     def predict(self, batch):
         """
         快速进行评估测试
         """
-        self.news_embeds = None
-        browsed_vector = self.news_embeds(batch['browsed_ids'].to(self.config.device))
+        browsed_vector = self.news_embeds[batch['browsed_ids'].to(self.config.device)]
         user_vector = self.user_encoder(browsed_vector,batch['browsed_mask'].to(self.config.device)).unsqueeze(1)
-        candidate_vector =self.news_embeds(batch['cand_ids'].to(self.config.device))
+        candidate_vector =self.news_embeds[batch['candidate_ids'].to(self.config.device)]
+        # print(user_vector.size())
+        # print(candidate_vector.size())
         pred =  torch.sum(user_vector*candidate_vector,2)
         if batch['candidate_mask'] is not None:
             pred = pred.masked_fill(batch['candidate_mask'].to(self.config.device) == 0, -1e9)

@@ -238,9 +238,10 @@ class News_Processor(object):
         print("SubCategory num ", train_news["SubCategory"].max())
         # 为方便取数据，将其改为json格式存储
         train_news=train_news[['News_ID', 'Title', 'Abstract', 'Category','SubCategory', 'Entities']]
-        train_news=train_news.reset_index()
+        train_news=train_news.reset_index(drop=True)
+        train_news.reset_index(inplace=True)
         train_news["index"] += 1
-        # print(train_news.columns)
+        print(train_news.describe())
         news_json = json.loads(train_news.set_index("News_ID").to_json(orient='index'))
         print(type(news_json))
         with open(os.path.join(self.conf.data_path, self.dataset + "/news.pkl"),'wb') as f:
@@ -325,7 +326,8 @@ class MIND_Log_Processor(object):
         his=df['history'].apply(lambda x: x.split(' ')[-self.conf.history_len:])
 
         imps=df['impressions'].apply(lambda x: x.split(' ')).tolist()
-        
+        imps_cnt=np.array([len(_) for _ in imps])
+        # print(imps_cnt.mean(), imps_cnt.max(), imps_cnt.min())
         res=[]
         for i,_h in enumerate(his.tolist()):
             tmp=[]
@@ -334,13 +336,17 @@ class MIND_Log_Processor(object):
             neg_idx=[_[:-2] for _ in imps[i] if _[-1]=='0']
             pos_idx=[_[:-2] for _ in imps[i] if _[-1]=='1' ]
             # random.shuffle(neg_idx)
+            # print(imps[i], "neg_num ",len(neg_idx))
             if data_type == 0:
                 sample_size = self.conf.negsample_size
             else:
                 sample_size = self.conf.max_candidate_size - 1
             imps_list=[]
             for i,_p in enumerate(pos_idx):
-                imps_list.append([_p]+neg_idx[i*sample_size:(i+1)*sample_size])                
+                if len(neg_idx) <= sample_size:
+                    imps_list.append([_p] + neg_idx)
+                else:
+                    imps_list.append([_p]+neg_idx[i*sample_size % len(neg_idx):(i+1)*sample_size % len(neg_idx)])              
             tmp.append(imps_list)
             res.append(tmp)
         if _id % 5 == 0 and _id > 0:
@@ -358,9 +364,10 @@ class MIND_Log_Processor(object):
                 if type == 0 and len(row[1]) < 5:
                     continue
                 for samples in row[2]:
+                    if len(samples) < 2:
+                        continue
+                    # print(len(samples))
                     final_samples.append((row[1], samples))
-                    if len(final_samples) == 10000000:
-                        return final_samples
         return final_samples
 
 

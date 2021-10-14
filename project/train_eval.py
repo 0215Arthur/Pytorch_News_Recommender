@@ -1,4 +1,5 @@
 # coding: UTF-8
+from enum import EnumMeta
 import os
 import numpy as np
 import torch
@@ -24,7 +25,7 @@ from model.nrms import Model
 
 from joblib import Parallel, delayed
 
-def train(config, model, train_iter, dev_iter ):    
+def train(config, model, train_iter, dev_iter, news_iter ):    
     start_time = time.time()
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
@@ -86,7 +87,8 @@ def train(config, model, train_iter, dev_iter ):
         print('Epoch [{}/{}]'.format(epoch + 1, config.num_epochs))
         # scheduler.step() # 学习率衰减
         loss_records=[]
-        # auc=evaluate(model,dev_iter)
+        # auc=evaluate(model,dev_iter, news_iter)
+        eval_res=""
         for i, datas in enumerate(train_iter):
             
             outputs = model(datas)
@@ -107,23 +109,23 @@ def train(config, model, train_iter, dev_iter ):
             loss.backward()
             optimizer.step()
            # evaluate(config,model,dev_iter,AUC_best)
-            
+            total_batch += 1
             if total_batch % STEP_SIZE == 0: 
                 time_dif = get_time_dif(start_time)
                 msg = 'Iter: {0:>6},  Train Loss: {1:>5.6},  Time: {2} {3}'
                 print(msg.format(total_batch, np.mean( loss_list), time_dif, improve))
                 loss_list=[]
-            total_batch += 1
-            if total_batch % config.eval_step == 0 and total_batch>0: 
-                auc=evaluate(model,dev_iter)
-                log_res(config,auc,total_batch)
+
+            if total_batch % config.eval_step == 0 and total_batch > 0: 
+                auc,eval_res=evaluate(model,dev_iter,news_iter)
+                log_res(config,auc,"step-{}".format(total_batch))
                 # if auc>AUC_best:
                 #     AUC_best=auc
                 #     if config.save_flag:
                 #         torch.save(model.state_dict(), config.save_path+'T{}_{}_epoch{}_iter_{}_auc_{:.3f}.ckpt'.format(time.strftime('%m-%d_%H.%M'),config.model_name,config.num_epochs,total_batch,AUC_best))
 
-        auc=evaluate(model,dev_iter)
-        log_res(config,auc,'epoch_{}'.format(epoch))
+        auc, eval_res=evaluate(model,dev_iter)
+        log_res(config,eval_res,'epoch_{}'.format(epoch))
         if auc>AUC_best:
             AUC_best=auc
             if config.save_flag:
@@ -134,43 +136,47 @@ def train(config, model, train_iter, dev_iter ):
     plot_loss(config.log_path,loss_records,step_size=STEP_SIZE)
  
 
-def _cal_score(y_true, pred):
-    auc = auc_score(y_true, pred)
+def _cal_score(y_true, pred, real_length):
+    auc = auc_score(y_true[:real_length], pred[:real_length])
     mrr = mrr_score(y_true, pred)
     ndcg5 = ndcg_score(y_true, pred, 5)
     ndcg10 = ndcg_score(y_true, pred, 10)
     return [auc, mrr, ndcg5, ndcg10]
 
-def evaluate(model, data_iter):
+def evaluate(model, data_iter, news_iter):
     model.eval()
     res=[]
-    global rank_score
     scores=[]
     with torch.no_grad():
+        print("update news vectors")
+        candidate_lens=[]
+        model.update_rep(news_iter)
         with tqdm(total=(data_iter.__len__()), desc='Predicting') as p:
-            for i, datas in tqdm(enumerate(data_iter)):
+            for i, datas in enumerate(data_iter):
                 #print(datas)
-                outputs = model(datas).cpu()
-                print(outputs)
+                outputs = model.predict(datas).cpu()
+                candidate_lens+=list(datas["candidate_lens"])
+                # print(outputs)
                 scores.append(outputs)
                 p.update(1)
         rank_score=np.concatenate(scores)
         y_true = np.array([1] + [0 for _ in range(rank_score.shape[1] - 1)])
+        print("calculating metrics...")
         res = Parallel(n_jobs=4)(
-            delayed(_cal_score)(y_true, i) for i in (rank_score)
+            delayed(_cal_score)(y_true, _, candidate_lens[i]) for i,_ in enumerate(rank_score)
         )
-        final_scores = np.array(res).mean(axis=1)
-
-        print("auc:{:.4f}\tmrr:{:.4f}\tndcg@5:{:.4f}\tndcg@10:{:.4f}".format(final_scores[0],\
+        final_scores = np.array(res).mean(axis=0)
+        eval_res = "auc:{:.4f}\tmrr:{:.4f}\tndcg@5:{:.4f}\tndcg@10:{:.4f}".format(final_scores[0],\
                                 final_scores[1],\
                                 final_scores[2],\
-                                final_scores[3]))
-    return final_scores[0]
-def log_res(config,step,auc):
+                                final_scores[3])
+        print(eval_res)
+    return final_scores[0], eval_res 
+def log_res(config,auc,step,mode="val"):
     if not  os.path.exists(config.log_path):
         os.mkdir(config.log_path) 
     with open(config.log_path+'/res.txt','a+') as f:
-        f.write('{}_{}_:auc_{}\n'.format(time.strftime('%m-%d_%H.%M'),auc,step))
+        f.write('{}\t{}\t{}\t{}\n'.format(time.strftime('%m-%d_%H.%M'),step,auc,mode))
 
 
 if __name__=='__main__':
@@ -203,10 +209,17 @@ if __name__=='__main__':
                               drop_last=False,
                               shuffle=False,
                               pin_memory=False)
-
+    
+    data=NewsDataset(news_dict)
+    news_iter = DataLoader(dataset=data, 
+                              batch_size=1280, 
+                              num_workers=4,
+                              drop_last=False,
+                              shuffle=False,
+                              pin_memory=False)
     model=Model(config).to(config.device)
 
-    train(config,model,train_iter,val_iter)
+    train(config,model,train_iter,val_iter, news_iter)
 
 
  
