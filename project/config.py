@@ -18,6 +18,7 @@ class Config(object):
         self.train_data=f'{dataset}/train_datas.pkl'
         self.val_data=f'{dataset}/val_datas.pkl'
         self.test_data=f'{dataset}/test_datas.pkl'
+        self.user_dict=f'{dataset}/user_dict.pkl'
 
         self.save_flag=False  # 模型存储标志
 
@@ -53,6 +54,8 @@ class Config(object):
         self.history_len=50  # 历史序列长度
         self.negsample_size=4   # 负样本采样规模
         self.max_candidate_size=100  # 候选样本最大长度
+        self.user_nums=458044
+        self.news_nums=104151
     """
     NRMS
     """
@@ -60,7 +63,7 @@ class Config(object):
         self.title_size=512 
         self.feature_size=712
         self.news_feature_size=600
-        self.news_nums=104151
+        
         # self.bert_embed_size=512
 
         self.query_vector_dim=200  # additive attn 向量维度
@@ -79,8 +82,29 @@ class Config(object):
         self.filter_nums_2=50
         self.title_heads_num=6
         self.num_attention_heads=10
+  
+    def __gnud__(self):
+        self.title_size=512 
+        self.feature_size=712
+        self.news_feature_size=600
+        self.news_nums=104151
+        self.filter_nums=100
+        # self.bert_embed_size=512
 
+        self.query_vector_dim=200  # additive attn 向量维度
+        self.query_vector_dim_large= 400 
 
-      
+        self.news_encoder_size=600
+        self.long_short_term_method='ini'
+
+        self.user_heads_num=6      # 
+        self.num_heads_2=4         # 
+        self.list_num_heads=8         # 
+
+        self.kernel_sizes = [2,4,5] # 
+        self.num_filters=400
+        self.filter_nums_2=50
+        self.title_heads_num=6
+        self.num_attention_heads=10
 
     

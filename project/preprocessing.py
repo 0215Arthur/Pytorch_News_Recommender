@@ -254,11 +254,11 @@ class MIND_Log_Processor(object):
         self.conf=config
         self.data_type=0
     
-    def _get_dev_label(self):
-        dev_behaviors = pd.read_table(os.path.join(self.conf.dev_path,'behaviors.tsv'), header=None, 
-                                    names=['user_id','time','history','impressions'])
-        dev_behaviors['y_true']=dev_behaviors['impressions'].apply(lambda x : ' '.join([(_[-1]) for _ in x.split(' ') ]) )
-        dev_behaviors[['user_id','y_true']].to_csv(os.path.join(self.conf.data_path, 'dev_behaviors.csv'), index=False)                            
+    def _update_id(self,df,field):
+        labels = pd.factorize(df[field])[0]
+        kwargs = {field: labels}
+        df = df.assign(**kwargs)
+        return df
 
     @log_exec_time
     def build_dataset(self,train_ratio = 0.3):
@@ -282,6 +282,7 @@ class MIND_Log_Processor(object):
         impression_df=impression_df.dropna().reset_index(drop=True)
         dev_df=dev_df.dropna().reset_index(drop=True)
         train_df=impression_df.sample(frac=train_ratio).reset_index(drop=True)
+        # self._update_id()
         random.seed(config.random_seed)
         print(len(train_df))
         print(len(dev_df))
@@ -304,6 +305,9 @@ class MIND_Log_Processor(object):
         test_res = Parallel(n_jobs=16)(
             delayed(self._build_data_sample)(test_df, i, 1) for i in range(test_df.shape[0]//self.BATCH_SIZE+1)
         )
+
+        self.user_ids={}
+
         with open(self.conf.data_path+self.conf.test_data,'wb') as f:
             pickle.dump(self.parse_data(test_res, 1),f)
 
@@ -313,6 +317,9 @@ class MIND_Log_Processor(object):
         with open(self.conf.data_path+self.conf.val_data,'wb') as f:
             pickle.dump(self.parse_data(val_res, 1),f)
         
+        print("user nums: ", len(self.user_ids))
+        with open(self.conf.data_path+self.conf.user_dict, 'wb') as f:
+            pickle.dump(self.user_ids,f)
 
 
     def _build_data_sample(self, df, _id, data_type):
@@ -356,18 +363,21 @@ class MIND_Log_Processor(object):
     def parse_data(self,data,type=0):
         """
         将数据拆分为训练格式
-        ([historical news_ids],[impression_ids])
+        ([historical news_ids],[impression_ids], user_id)
         """
         final_samples=[]
         for _ in data:
             for row in _:
                 if type == 0 and len(row[1]) < 5:
                     continue
+                if row[0] not in self.user_ids:
+                    self.user_ids[row[0]]=len(self.user_ids)
+
                 for samples in row[2]:
                     if len(samples) < 2:
                         continue
                     # print(len(samples))
-                    final_samples.append((row[1], samples))
+                    final_samples.append((row[1], samples, self.user_ids[row[0]]))
         return final_samples
 
 

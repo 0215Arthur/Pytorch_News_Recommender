@@ -21,7 +21,8 @@ from evaluation import ndcg_score,mrr_score,auc_score
 import functools
 from config import Config
 from data_handler import *
-from model.nrms import Model
+# from model.nrms import Model
+from model.GNUD import Model
 
 from joblib import Parallel, delayed
 
@@ -118,13 +119,13 @@ def train(config, model, train_iter, dev_iter, news_iter ):
 
             if total_batch % config.eval_step == 0 and total_batch > 0: 
                 auc,eval_res=evaluate(model,dev_iter,news_iter)
-                log_res(config,auc,"step-{}".format(total_batch))
+                log_res(config,eval_res,"step-{}".format(total_batch))
                 # if auc>AUC_best:
                 #     AUC_best=auc
                 #     if config.save_flag:
                 #         torch.save(model.state_dict(), config.save_path+'T{}_{}_epoch{}_iter_{}_auc_{:.3f}.ckpt'.format(time.strftime('%m-%d_%H.%M'),config.model_name,config.num_epochs,total_batch,AUC_best))
 
-        auc, eval_res=evaluate(model,dev_iter)
+        auc, eval_res=evaluate(model,dev_iter,news_iter)
         log_res(config,eval_res,'epoch_{}'.format(epoch))
         if auc>AUC_best:
             AUC_best=auc
@@ -138,9 +139,9 @@ def train(config, model, train_iter, dev_iter, news_iter ):
 
 def _cal_score(y_true, pred, real_length):
     auc = auc_score(y_true[:real_length], pred[:real_length])
-    mrr = mrr_score(y_true, pred)
-    ndcg5 = ndcg_score(y_true, pred, 5)
-    ndcg10 = ndcg_score(y_true, pred, 10)
+    mrr = mrr_score(y_true[:real_length], pred[:real_length])
+    ndcg5 = ndcg_score(y_true[:real_length], pred[:real_length], 5)
+    ndcg10 = ndcg_score(y_true[:real_length], pred[:real_length], 10)
     return [auc, mrr, ndcg5, ndcg10]
 
 def evaluate(model, data_iter, news_iter):
@@ -185,8 +186,10 @@ if __name__=='__main__':
     torch.cuda.manual_seed_all(2020)
     #build_dataset(config,_type=0)
     torch.backends.cudnn.deterministic = True
-    config=Config('NRMS', 'MIND')
-    config.__nrms__()
+    # config=Config('NRMS', 'MIND')
+    # config.__nrms__()
+    config=Config('GNUD', 'MIND')
+    config.__gnud__()
     with open(os.path.join(config.data_path,config.train_data), 'rb') as f:
         train_data=pickle.load(f)
     with open(os.path.join(config.data_path,config.val_data), 'rb') as f:

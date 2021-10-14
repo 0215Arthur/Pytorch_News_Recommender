@@ -119,8 +119,9 @@ class MyDataset(Dataset):
 
         #candidate_entity_ids=self.entity_dict[candidate_ids][:,:self.entity_nums]
         candidate_mask=torch.ByteTensor([1 for _ in range(y)]+[0 for _ in range(self.sample_size-y)])
-
-        return {'browsed_ids': browsed_ids,
+        user_id = np.array([data[2]], dtype=np.int)
+        return {'user_id': user_id,\
+                'browsed_ids': browsed_ids,
                 'browsed_lens':browsed_lens,\
                 'browsed_titles':browsed_titles,\
                 'browsed_absts':browsed_absts,\
