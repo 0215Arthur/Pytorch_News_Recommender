@@ -106,7 +106,6 @@ class MyDataset(Dataset):
 
         browsed_categ_ids[:x]=np.array([self.news_dict[i]["Category"]  for i in data[0]] )
         browsed_subcateg_ids[:x]=np.array([self.news_dict[i]["SubCategory"]  for i in data[0]] )
-            
             # 对训练集而言： 需要构造新闻imps的数据特征； 
             # 而测试和验证集，均不需要，直接统一填充即可
         y=len(data[1][:self.sample_size])

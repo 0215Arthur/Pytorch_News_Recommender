@@ -83,19 +83,19 @@ class NewsEncoder(torch.nn.Module):
          
         title_vector=torch.stack(title_embeds_list).permute(1,0,2)
 
-        abst_ids=abst_ids.permute(1,0,2)
+        # abst_ids=abst_ids.permute(1,0,2)
          
-        for _ids in abst_ids:
-            abst_embedded = self.word_embedding(_ids) 
-            attn_output = self.multi_head_self_attention(abst_embedded,abst_embedded,abst_embedded)
-            abst_vector = self.additive_attention(attn_output)
-            abst_embeds_list.append(abst_vector)
+        # for _ids in abst_ids:
+        #     abst_embedded = self.word_embedding(_ids) 
+        #     attn_output = self.multi_head_self_attention(abst_embedded,abst_embedded,abst_embedded)
+        #     abst_vector = self.additive_attention(attn_output)
+        #     abst_embeds_list.append(abst_vector)
          
-        abst_vector=torch.stack(abst_embeds_list).permute(1,0,2)
+        # abst_vector=torch.stack(abst_embeds_list).permute(1,0,2)
 
         # categ_embeds = self.category_embedding(news_categ)
         # subcateg_embeds = self.subcategory_embedding(news_subcateg)
-        news_vector=torch.cat([title_vector,abst_vector],-1)
+        news_vector=title_vector#torch.cat([title_vector,abst_vector],-1)
         news_vector=self.dropout(news_vector)
 
 
@@ -104,95 +104,6 @@ class NewsEncoder(torch.nn.Module):
         # abst_vector = self.additive_attention(attn_output)
 
         return news_vector
-
-
-# class CNNNewsEncoder(torch.nn.Module):
-#     def __init__(self, config):
-#         super(NewsEncoder, self).__init__()
-#         self.config = config
-#         #self.category_embedding =nn.Embedding(config.category_nums, config.cate_embed_size, padding_idx=0)
-#         #self.subcategory_embedding =nn.Embedding(config.subcategory_nums, config.cate_embed_size, padding_idx=0)
-#         if config.word_embedding_pretrained is not None:
-#             self.word_embedding = nn.Embedding.from_pretrained(torch.tensor(
-#                 np.load(config.data_path +config.word_embedding_pretrained)["embeddings"].astype('float32')), 
-#                 freeze=False,padding_idx=0).to(config.device)
-#         else:
-#             self.embedding = nn.Embedding(config.n_words, config.word_embed_size, padding_idx=0)
-#         # self.entity_embedding = nn.Embedding.from_pretrained(torch.tensor(
-#         #     np.load( config.data_path +config.entity_embedding_pretrained)["embeddings"].astype('float32')), 
-#         #      freeze=False).to(config.device)
-
-#         conv_blocks = []
-#         for filter_size in config.kernel_sizes:
-#             maxpool_kernel_size = config.n_words_title - filter_size + 1
-#             conv = nn.Conv2d(
-#                             in_channels=1,\
-#                             out_channels=config.filter_nums,\
-#                             kernel_size=(filter_size,config.word_embed_size)
-#                             )
-#             conv_blocks.append(conv)
-#         self.conv_blocks = nn.ModuleList(conv_blocks)
-
-#         conv_blocks = []
-#         for filter_size in config.kernel_sizes:
-#             maxpool_kernel_size = config.n_words_abst - filter_size + 1
-#             conv = nn.Conv2d(
-#                             in_channels=1,\
-#                             out_channels=config.filter_nums,\
-#                             kernel_size=(filter_size,config.word_embed_size)
-#                             )
-#             conv_blocks.append(conv)
-
-#         self.conv_blocks2 = nn.ModuleList(conv_blocks)
-#         self.dropout=nn.Dropout(config.dropout)
-
-#         self.Linear= nn.Linear(config.news_feature_size, config.news_feature_size)
-
-#     #@torchsnooper.snoop()
-#     def forward(self, data, attn_masks=None):
-#         '''
-#         config:
-#             news:
-#                 {
-#                     'title': Tensor(batch_size) * n_words_title
-#                 }
-#         Returns:
-#             news_vector: Tensor(batch_size, word_embedding_dim)
-#         '''
-#         title_ids,abst_ids =data
-
-#         abst_embeds_list=[]
-#         title_embeds_list=[]
-        
-#         title_ids=title_ids.permute(1,0,2)
-         
-#         for _ids in title_ids:
-#             title_embedded = self.word_embedding(_ids).unsqueeze(1)
-#             # print(title_embedded.size())
-#             x = [F.relu(conv(title_embedded)).squeeze(3) for conv in self.conv_blocks]
-#             x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]
-#             title_vector = torch.cat(x, 1) 
-#             title_embeds_list.append(title_vector)
-         
-#         title_vector=torch.stack(title_embeds_list).permute(1,0,2)
-
-#         abst_ids=abst_ids.permute(1,0,2)
-         
-#         for _ids in abst_ids:
-#             abst_embedded = self.word_embedding(_ids).unsqueeze(1)
-#             x = [F.relu(conv(abst_embedded)).squeeze(3) for conv in self.conv_blocks2]
-#             x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]
-#             abst_vector = torch.cat(x, 1) 
-#             abst_embeds_list.append(abst_vector)
-         
-#         abst_vector=torch.stack(abst_embeds_list).permute(1,0,2)
-
-#         # categ_embeds = self.category_embedding(news_categ)
-#         # subcateg_embeds = self.subcategory_embedding(news_subcateg)
-#         news_vector=torch.cat([title_vector,abst_vector],-1)
-#         news_vector=self.dropout(news_vector)
-#         # print(news_vector.size())
-#         return self.Linear(news_vector)
 
 
 class RoutingLayer(nn.Module):
@@ -242,27 +153,26 @@ class RoutingLayer(nn.Module):
         output = target.squeeze() + torch.sum(alpha * news, axis = 2) # k * N
 
         return self.l2(output)
+
 class UserEncoder(torch.nn.Module):
     def __init__(self, config):
         super(UserEncoder, self).__init__()
-        self.route = RoutingLayer(config.news_feature_size, K=2)
-        self.route2 = RoutingLayer(config.news_feature_size, K=2)
-        self.user_embeddings=nn.Embedding(config.user_nums, config.news_feature_size)
-        self.multi_head_self_attention = MultiHeadSelfAttention(config.title_heads_num, config.word_embed_size,config.dropout)
-        # self.additive_attention = AdditiveAttention(config.query_vector_dim, config.word_embed_size)
+        self.topic_embeddings=nn.Embedding(config.subcategory_nums, config.word_embed_size)
+        self.multi_head_self_attention = MultiHeadSelfAttention(config.title_heads_num, config.word_embed_size,config.dropout, config.word_embed_size)
+        self.additive_attention = AdditiveAttention(config.query_vector_dim, config.word_embed_size)
 
     #@torchsnooper.snoop()
-    def forward(self, news_vectors, user_ids,attn_masks):
+    def forward(self, news_vectors, topic_ids,attn_masks):
         """
         batch * N(历史长度50) * dim
         """
-        # print(user_ids)
-        user_vector = self.user_embeddings(user_ids) # batch * 1 * dim
-        user_vector = torch.cat([user_vector, news_vectors], axis=1) # batch * (N + 1) * dim
-        user_vector = self.route(user_vector).view(user_vector.size(0), 1, -1)
-        user_vector = torch.cat([user_vector, news_vectors], axis=1) # batch * (N + 1) * dim
-        user_vector = self.route2(user_vector).view(user_vector.size(0), -1)
+        # print(topic_ids)
+        topic_embeds = self.topic_embeddings(topic_ids) # batch * 1 * dim
+        # print("topic size:",topic_embeds.size())
+        attn_output = self.multi_head_self_attention(news_vectors,news_vectors,news_vectors,mask=attn_masks, topic=None)
+        user_vector = self.additive_attention(attn_output,attn_masks)
         return user_vector
+
 class Model(torch.nn.Module):
 
     def __init__(self, config):
@@ -319,7 +229,7 @@ class Model(torch.nn.Module):
         start = time.time() 
         # b*E
         user_vector = self.user_encoder(browsed_vector,\
-                                        batch['user_id'].to(self.config.device),\
+                                        batch['browsed_subcateg_ids'].to(self.config.device),\
                                         batch['browsed_mask'].to(self.config.device)
                                         ).unsqueeze(1)
         #print(time.time() - start)
@@ -340,12 +250,12 @@ class Model(torch.nn.Module):
         for i,batch in enumerate(news_iter):
             if len(batch['titles']) == batch_size:
                 news_vector = self.news_encoder((batch['titles'].to(self.device).view(256, batch_size // 256, -1 ),\
-                                                batch['absts'].to(self.device).view(256, batch_size // 256, -1 ))).view(-1, self.config.news_feature_size)
+                                                batch['absts'].to(self.device).view(256, batch_size // 256, -1 ))).contiguous().view(-1, self.config.news_feature_size)
                 self.news_embeds[i*batch_size + 1: (i+1)*batch_size + 1].copy_(news_vector)
             else:
                 sz = len(batch['titles'])
                 news_vector = self.news_encoder((batch['titles'].to(self.device).view(sz, 1, -1),\
-                                                batch['absts'].to(self.device).view(sz, 1, -1 ))).view(-1, self.config.news_feature_size)
+                                                batch['absts'].to(self.device).view(sz, 1, -1 ))).contiguous().view(-1, self.config.news_feature_size)
                 self.news_embeds[i*batch_size + 1:].copy_(news_vector)
         return 
 
@@ -355,7 +265,7 @@ class Model(torch.nn.Module):
         快速进行评估测试
         """
         browsed_vector = self.news_embeds[batch['browsed_ids'].to(self.config.device)]
-        user_vector = self.user_encoder(browsed_vector,batch['user_id'].to(self.config.device),batch['browsed_mask'].to(self.config.device)).unsqueeze(1)
+        user_vector = self.user_encoder(browsed_vector,batch['browsed_subcateg_ids'].to(self.config.device),batch['browsed_mask'].to(self.config.device)).unsqueeze(1)
         candidate_vector =self.news_embeds[batch['candidate_ids'].to(self.config.device)]
         # print(user_vector.size())
         # print(candidate_vector.size())

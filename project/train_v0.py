@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sklearn import metrics
 import pickle
-import argparse
+  
 from torch.utils.data import Dataset,DataLoader
 from lr_scheduler import GradualWarmupScheduler
 import time
@@ -22,8 +22,7 @@ import functools
 from config import Config
 from data_handler import *
 # from model.nrms import Model
-# from model.GNUD import Model
-from model.dist import Model
+from model.HieRec import Model
 
 from joblib import Parallel, delayed
 
@@ -177,17 +176,11 @@ def evaluate(model, data_iter, news_iter):
 def log_res(config,auc,step,mode="val"):
     if not  os.path.exists(config.log_path):
         os.mkdir(config.log_path) 
-    with open(config.log_path+'/res_{}.txt'.format(config.version),'a+') as f:
+    with open(config.log_path+'/res.txt','a+') as f:
         f.write('{}\t{}\t{}\t{}\n'.format(time.strftime('%m-%d_%H.%M'),step,auc,mode))
 
 
 if __name__=='__main__':
-    parser = argparse.ArgumentParser(description='MIND')
-
-    parser.add_argument('--version', type=str, required=True, help='choose the proper model')          
-
-    args = parser.parse_args()
-
     print(os.getpid())
     torch.manual_seed(2020)
     torch.cuda.manual_seed_all(2020)
@@ -195,11 +188,8 @@ if __name__=='__main__':
     torch.backends.cudnn.deterministic = True
     # config=Config('NRMS', 'MIND')
     # config.__nrms__()
-    # config=Config('GNUD', 'MIND')
-    # config.__gnud__()
-    config=Config('dist', 'MIND')
-    config.__dist__()
-    config.version=args.version
+    config=Config('HieRec', 'MIND')
+    config.__hierec__()
     with open(os.path.join(config.data_path,config.train_data), 'rb') as f:
         train_data=pickle.load(f)
     with open(os.path.join(config.data_path,config.val_data), 'rb') as f:

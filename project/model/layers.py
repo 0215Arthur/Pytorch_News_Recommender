@@ -12,7 +12,7 @@ class Attention(nn.Module):
     Compute 'Scaled Dot Product Attention
     """
 
-    def forward(self, query, key, value, head_nums,mask=None, dropout=None):
+    def forward(self, query, key, value, head_nums,mask=None, dropout=None, topic_query=None, topic_key=None):
         # 
         scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(query.size(-1))
         
@@ -25,6 +25,15 @@ class Attention(nn.Module):
             #print(_mask.size())
             _mask=torch.cat([_mask for _ in range(head_nums)],1)
             scores = scores.masked_fill(_mask == 0, -1e9)
+            if topic_query is not None:
+                topic_scores = torch.matmul(topic_query, topic_key.transpose(-2, -1)) / math.sqrt(topic_query.size(-1))
+                _mask=mask.unsqueeze(1)*mask.unsqueeze(2)
+                # print(_mask.size())
+                # print(topic_scores.size())
+                topic_scores = topic_scores.masked_fill(_mask == 0, -1e9).unsqueeze(1)
+                scores = scores * topic_scores
+                scores /= topic_query.size(-1)
+                # topic_scores
             #print(scores[0])
 
         p_attn = F.softmax(scores, dim=-1)
@@ -40,7 +49,7 @@ class MultiHeadSelfAttention(nn.Module):
     Take in model size and number of heads.
     """
 
-    def __init__(self, h, d_model, dropout):
+    def __init__(self, h, d_model, dropout, topic_embed=100):
         super().__init__()
         assert d_model % h == 0
 
@@ -49,24 +58,27 @@ class MultiHeadSelfAttention(nn.Module):
         self.h = h
 
         self.linear_layers = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(3)])
+        # self.topic_layers = nn.ModuleList([nn.Linear(topic_embed, topic_embed) for _ in range(2)])
         self.output_linear = nn.Linear(d_model, d_model)
         self.attention = Attention()
 
         self.dropout = nn.Dropout(p=dropout)
   #  @torchsnooper.snoop()
-    def forward(self, query, key, value, mask=None):
+    def forward(self, query, key, value, mask=None, topic=None):
         batch_size = query.size(0)
-
+        topic_query=None
+        topic_key=None
         # 1) Do all the linear projections in batch from d_model => h x d_k
         query, key, value = [l(x).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
                              for l, x in zip(self.linear_layers, (query, key, value))]
-
+        # if topic is not None:
+        #     topic_query, topic_key = [l(x) for l, x in zip(self.topic_layers, (topic, topic))]
         # 2) Apply attention on all the projected vectors in batch. 
-        x, attn = self.attention(query, key, value, head_nums=self.h, mask=mask, dropout=self.dropout)
+        x, attn = self.attention(query, key, value, head_nums=self.h, mask=mask, dropout=self.dropout, topic_query=topic, topic_key=topic )
 
         # 3) "Concat" using a view and apply a final linear.
         x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
-
+        
         return self.output_linear(x)
   
 class AdditiveAttention(torch.nn.Module):

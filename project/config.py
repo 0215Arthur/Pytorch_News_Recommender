@@ -9,6 +9,7 @@ class Config(object):
         """
         通用配置
         """
+        self.version = ""
         self.model_name = model_name
         self.data_path='./dataset_processed/'
         self.word_embedding_pretrained =  f'{dataset}/all_word_embedding.npz'
@@ -30,7 +31,6 @@ class Config(object):
         self.cate_embed_size=100 # 类别嵌入大小
         
         self.word_embed_size=300                                      #单词嵌入维度
-        self.num_epochs = 5                                           # epoch数
         self.eval_step=200
         self.batch_size = 256                                          # mini-batch大小
         self.learning_rate = 1e-3   
@@ -47,6 +47,7 @@ class Config(object):
         """
         self.category_nums=18 + 1  #类别数量 
         self.n_words=38284    # 单词数量
+        self.num_epochs = 2                                           # epoch数
         self.subcategory_nums=285+1 # 子类别数量
         self.entity_nums=10      # 单个新闻实体数量
         self.n_words_title=20  # 标题单词长度
@@ -107,4 +108,50 @@ class Config(object):
         self.title_heads_num=6
         self.num_attention_heads=10
 
-    
+    def __dist__(self):
+        self.title_size=512 
+        self.feature_size=712
+        self.news_feature_size=300
+        self.news_nums=104151
+        self.filter_nums=100
+        # self.bert_embed_size=512
+
+        self.query_vector_dim=200  # additive attn 向量维度
+        self.query_vector_dim_large= 400 
+
+        self.news_encoder_size=600
+        self.long_short_term_method='ini'
+
+        self.user_heads_num=6      # 
+        self.num_heads_2=4         # 
+        self.list_num_heads=8         # 
+
+        self.kernel_sizes = [2,4,5] # 
+        self.num_filters=400
+        self.filter_nums_2=50
+        self.title_heads_num=6
+        self.num_attention_heads=10
+
+    def __hierec__(self):
+        self.title_size=512 
+        self.feature_size=712
+        self.news_feature_size=600
+        
+        # self.bert_embed_size=512
+
+        self.query_vector_dim=200  # additive attn 向量维度
+        self.query_vector_dim_large= 400 
+
+        self.news_encoder_size=600
+        self.long_short_term_method='ini'
+
+        self.user_heads_num=6      # 
+        self.num_heads_2=4         # 
+        self.list_num_heads=8         # 
+
+        self.kernel_sizes = 3 # 
+        self.kernel_sizes_2 = [2,4]
+        self.num_filters=400
+        self.filter_nums_2=50
+        self.title_heads_num=6
+        self.num_attention_heads=10
