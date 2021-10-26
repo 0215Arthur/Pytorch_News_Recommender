@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from torch.nn.modules.linear import Linear
 import torchsnooper
 import torch.nn.functional as F
 import math
@@ -29,15 +30,21 @@ class Attention(nn.Module):
                 topic_scores = torch.matmul(topic_query, topic_key.transpose(-2, -1)) / math.sqrt(topic_query.size(-1))
                 _mask=mask.unsqueeze(1)*mask.unsqueeze(2)
                 # print(_mask.size())
-                # print(topic_scores.size())
-                topic_scores = topic_scores.masked_fill(_mask == 0, -1e9).unsqueeze(1)
+                # for row in topic_scores.detach().cpu().numpy():
+                #     for _ in row:
+                #         print(_, end='')
+                #     print() 
+                # print("topic_scores: ",topic_scores)
+                topic_scores = topic_scores.masked_fill(_mask == 0, 1).unsqueeze(1)
+                topic_scores = F.softmax(topic_scores, dim=-1)
                 scores = scores * topic_scores
-                scores /= topic_query.size(-1)
+                # scores /= topic_query.size(-1)
+                # print(scores)
                 # topic_scores
             #print(scores[0])
 
         p_attn = F.softmax(scores, dim=-1)
-
+        
         if dropout is not None:
             p_attn = dropout(p_attn)
 
@@ -64,7 +71,7 @@ class MultiHeadSelfAttention(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
   #  @torchsnooper.snoop()
-    def forward(self, query, key, value, mask=None, topic=None):
+    def forward(self, query, key, value, mask=None, topic=None, save_attn=False):
         batch_size = query.size(0)
         topic_query=None
         topic_key=None
@@ -74,12 +81,13 @@ class MultiHeadSelfAttention(nn.Module):
         # if topic is not None:
         #     topic_query, topic_key = [l(x) for l, x in zip(self.topic_layers, (topic, topic))]
         # 2) Apply attention on all the projected vectors in batch. 
-        x, attn = self.attention(query, key, value, head_nums=self.h, mask=mask, dropout=self.dropout, topic_query=topic, topic_key=topic )
-
+        x, attn = self.attention(query, key, value, head_nums=self.h, mask=mask, dropout=self.dropout)
+        # if save_attn:
+        #     torch.save
         # 3) "Concat" using a view and apply a final linear.
         x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
-        
-        return self.output_linear(x)
+
+        return self.output_linear(x), attn
   
 class AdditiveAttention(torch.nn.Module):
     def __init__(self, query_vector_dim, input_vector_dim):

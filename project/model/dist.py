@@ -77,7 +77,7 @@ class NewsEncoder(torch.nn.Module):
          
         for _ids in title_ids:
             title_embedded = self.word_embedding(_ids) 
-            attn_output = self.multi_head_self_attention(title_embedded,title_embedded,title_embedded)
+            attn_output, _ = self.multi_head_self_attention(title_embedded,title_embedded,title_embedded)
             title_vector = self.additive_attention(attn_output)
             title_embeds_list.append(title_vector)
          
@@ -100,7 +100,7 @@ class NewsEncoder(torch.nn.Module):
 
 
         # abst_embedded = self.word_embedding(abst_ids) 
-        # attn_output = self.multi_head_self_attention(abst_embedded,abst_embedded,abst_embedded,mask=attn_masks)
+        # attn_output, _ = self.multi_head_self_attention(abst_embedded,abst_embedded,abst_embedded,mask=attn_masks)
         # abst_vector = self.additive_attention(attn_output)
 
         return news_vector
@@ -162,14 +162,16 @@ class UserEncoder(torch.nn.Module):
         self.additive_attention = AdditiveAttention(config.query_vector_dim, config.word_embed_size)
 
     #@torchsnooper.snoop()
-    def forward(self, news_vectors, topic_ids,attn_masks):
+    def forward(self, news_vectors, topic_ids,attn_masks, i=0):
         """
         batch * N(历史长度50) * dim
         """
         # print(topic_ids)
         topic_embeds = self.topic_embeddings(topic_ids) # batch * 1 * dim
         # print("topic size:",topic_embeds.size())
-        attn_output = self.multi_head_self_attention(news_vectors,news_vectors,news_vectors,mask=attn_masks, topic=None)
+        attn_output, _ = self.multi_head_self_attention(news_vectors,news_vectors,news_vectors,mask=attn_masks, topic=topic_embeds)
+        if not self.training:
+            torch.save(_, "./tmp/{}_topic.pt".format(i))
         user_vector = self.additive_attention(attn_output,attn_masks)
         return user_vector
 

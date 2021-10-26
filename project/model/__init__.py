@@ -11,15 +11,15 @@ import torch.nn as nn
 import torch.nn.parallel as P
 
 class Model(nn.Module):
-    def __init__(self, config,args):
+    def __init__(self, config):
         super(Model, self).__init__()
         print('Building model...')
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        #args.device = self.device
-        self.n_GPUs = args.n_GPUs
+        # #args.device = self.device
+        # self.n_GPUs = args.n_GPUs
 
-        module = import_module('model.' + args.model.lower())
+        module = import_module('model.' + config.model_name.lower())
         self.model = module.Model(config).to(self.device)
         # load the pre-trained parameters
         # if args.load is not None:

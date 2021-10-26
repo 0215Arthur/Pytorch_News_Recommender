@@ -4,6 +4,8 @@
 *.npz
 *.tsv
 *.log
+*.pt
+*.chpkt
 .vscode
 .idea
 .DS_Store

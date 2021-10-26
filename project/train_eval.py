@@ -23,7 +23,8 @@ from config import Config
 from data_handler import *
 # from model.nrms import Model
 # from model.GNUD import Model
-from model.dist import Model
+# from model.dist import Model
+from model import Model
 
 from joblib import Parallel, delayed
 
@@ -85,6 +86,7 @@ def train(config, model, train_iter, dev_iter, news_iter ):
            
     
     for epoch in range(config.num_epochs):
+        model.train()
         #auc=evaluate(config,model,dev_iter,AUC_best,title_id_dict,abst_id_dict)
         print('Epoch [{}/{}]'.format(epoch + 1, config.num_epochs))
         # scheduler.step() # 学习率衰减
@@ -92,7 +94,7 @@ def train(config, model, train_iter, dev_iter, news_iter ):
         # auc=evaluate(model,dev_iter, news_iter)
         eval_res=""
         for i, datas in enumerate(train_iter):
-            
+            model.train()
             outputs = model(datas)
 
             # print(outputs)
@@ -141,9 +143,10 @@ def train(config, model, train_iter, dev_iter, news_iter ):
 def _cal_score(y_true, pred, real_length):
     auc = auc_score(y_true[:real_length], pred[:real_length])
     mrr = mrr_score(y_true[:real_length], pred[:real_length])
+    ndcg1 = ndcg_score(y_true[:real_length], pred[:real_length], 1)
     ndcg5 = ndcg_score(y_true[:real_length], pred[:real_length], 5)
     ndcg10 = ndcg_score(y_true[:real_length], pred[:real_length], 10)
-    return [auc, mrr, ndcg5, ndcg10]
+    return [auc, mrr, ndcg1, ndcg5, ndcg10]
 
 def evaluate(model, data_iter, news_iter):
     model.eval()
@@ -152,11 +155,15 @@ def evaluate(model, data_iter, news_iter):
     with torch.no_grad():
         print("update news vectors")
         candidate_lens=[]
-        model.update_rep(news_iter)
-        with tqdm(total=(data_iter.__len__()), desc='Predicting') as p:
+        if news_iter is not None:
+            model.update_rep(news_iter)
+        with tqdm(total=(data_iter.__len__()), desc='Predicting') as p: 
             for i, datas in enumerate(data_iter):
                 #print(datas)
-                outputs = model.predict(datas).cpu()
+                if news_iter is not None:
+                    outputs = model.predict(datas).cpu()
+                else:
+                    outputs = model(datas).cpu()
                 candidate_lens+=list(datas["candidate_lens"])
                 # print(outputs)
                 scores.append(outputs)
@@ -164,14 +171,15 @@ def evaluate(model, data_iter, news_iter):
         rank_score=np.concatenate(scores)
         y_true = np.array([1] + [0 for _ in range(rank_score.shape[1] - 1)])
         print("calculating metrics...")
-        res = Parallel(n_jobs=4)(
+        res = Parallel(n_jobs=8)(
             delayed(_cal_score)(y_true, _, candidate_lens[i]) for i,_ in enumerate(rank_score)
         )
         final_scores = np.array(res).mean(axis=0)
-        eval_res = "auc:{:.4f}\tmrr:{:.4f}\tndcg@5:{:.4f}\tndcg@10:{:.4f}".format(final_scores[0],\
+        eval_res = "auc:{:.4f}\tmrr:{:.4f}\tndcg@1:{:.4f}\tndcg@5:{:.4f}\tndcg@10:{:.4f}".format(final_scores[0],\
                                 final_scores[1],\
                                 final_scores[2],\
-                                final_scores[3])
+                                final_scores[3],\
+                                final_scores[4])
         print(eval_res)
     return final_scores[0], eval_res 
 def log_res(config,auc,step,mode="val"):
@@ -184,7 +192,8 @@ def log_res(config,auc,step,mode="val"):
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='MIND')
 
-    parser.add_argument('--version', type=str, required=True, help='choose the proper model')          
+    parser.add_argument('--version', type=str, default="nrms", help='choose the proper model')  
+    parser.add_argument('--model', type=str, default="nrms", help='choose the proper model')          
 
     args = parser.parse_args()
 
@@ -197,42 +206,30 @@ if __name__=='__main__':
     # config.__nrms__()
     # config=Config('GNUD', 'MIND')
     # config.__gnud__()
-    config=Config('dist', 'MIND')
-    config.__dist__()
+    config=Config(args.model, 'GLOBO')
+
     config.version=args.version
     with open(os.path.join(config.data_path,config.train_data), 'rb') as f:
         train_data=pickle.load(f)
     with open(os.path.join(config.data_path,config.val_data), 'rb') as f:
         val_data=pickle.load(f)
-    with open(os.path.join(config.data_path, "MIND/news.pkl"),'rb') as f:
-        news_dict=pickle.load(f)
-    
-    data=MyDataset(config,train_data, news_dict)
-    train_iter = DataLoader(dataset=data, 
-                              batch_size=config.batch_size, 
-                              num_workers=4,
-                              drop_last=False,
-                              shuffle=True,
-                              pin_memory=False)
+    # with open(os.path.join(config.data_path, "MIND/news.pkl"),'rb') as f:
+    #     news_dict=pickle.load(f)
+    train_iter = get_data_loader(config, train_data)
 
-    val_data=MyDataset(config,val_data, news_dict, type=1)
-    val_iter = DataLoader(dataset=val_data, 
-                              batch_size=config.batch_size, 
-                              num_workers=4,
-                              drop_last=False,
-                              shuffle=False,
-                              pin_memory=False)
-    
-    data=NewsDataset(news_dict)
-    news_iter = DataLoader(dataset=data, 
-                              batch_size=1280, 
-                              num_workers=4,
-                              drop_last=False,
-                              shuffle=False,
-                              pin_memory=False)
+    val_iter = get_data_loader(config, val_data)
+
+    # data=NewsDataset(news_dict)
+    # news_iter = DataLoader(dataset=data, 
+    #                           batch_size=1280, 
+    #                           num_workers=4,
+    #                           drop_last=False,
+    #                           shuffle=False,
+    #                           pin_memory=False)
     model=Model(config).to(config.device)
+    recommender=Model(config)
 
-    train(config,model,train_iter,val_iter, news_iter)
+    train(config,model,train_iter,val_iter, news_iter=None)
 
 
  

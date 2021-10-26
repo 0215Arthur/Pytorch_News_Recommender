@@ -321,7 +321,6 @@ class MIND_Log_Processor(object):
         with open(self.conf.data_path+self.conf.user_dict, 'wb') as f:
             pickle.dump(self.user_ids,f)
 
-
     def _build_data_sample(self, df, _id, data_type):
         """
         [user_id, [his_list], [[cand_list],[cand_list]]]

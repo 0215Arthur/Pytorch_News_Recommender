@@ -1,6 +1,8 @@
 
 import torch
 import os
+
+from torch.utils.data import dataset
 #os.environ["CUDA_VISIBLE_DEVICES"] = "2" 
 
 class Config(object):
@@ -12,8 +14,6 @@ class Config(object):
         self.version = ""
         self.model_name = model_name
         self.data_path='./dataset_processed/'
-        self.word_embedding_pretrained =  f'{dataset}/all_word_embedding.npz'
-        self.entity_embedding_pretrained=  f'{dataset}/entitiy_embeds.npz'
         self.save_path =   './save_model/'        # 模型训练结果
         self.log_path =  './logs/' + self.model_name
         self.train_data=f'{dataset}/train_datas.pkl'
@@ -30,7 +30,7 @@ class Config(object):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备
         self.cate_embed_size=100 # 类别嵌入大小
         
-        self.word_embed_size=300                                      #单词嵌入维度
+
         self.eval_step=200
         self.batch_size = 256                                          # mini-batch大小
         self.learning_rate = 1e-3   
@@ -38,13 +38,23 @@ class Config(object):
         self.require_improvement = 10000                                 # 若超过1000batch效果还没提升，则提前结束训练
         self.warm_up_steps=500
         self.warm_up=False
-        if dataset == "MIND":
+        if dataset.upper() == "MIND":
             self.__MIND__()
-    
+        if dataset.upper() == "GLOBO":
+            self.__GLOBO__()
+        self.dataset = dataset.upper()
+        if model_name.lower() == "nrms":
+            self.__nrms__()
+        elif model_name.lower() == "dist":
+            self.__dist__()
+        elif model_name.lower() == "lstur":
+            self.__lstur__()
+
     def __MIND__(self):
         """
         配置 mind数据集构造及设置参数
         """
+        self.word_embed_size=300                                      #单词嵌入维度
         self.category_nums=18 + 1  #类别数量 
         self.n_words=38284    # 单词数量
         self.num_epochs = 2                                           # epoch数
@@ -57,32 +67,44 @@ class Config(object):
         self.max_candidate_size=100  # 候选样本最大长度
         self.user_nums=458044
         self.news_nums=104151
+        self.word_embedding_pretrained =  'MIND/all_word_embedding.npz'
+        self.entity_embedding_pretrained=  'MIND/entitiy_embeds.npz'
+    
+    def __GLOBO__(self):
+        self.article_embed_size=250                                      #单词嵌入维度
+        self.category_nums=18 + 1  #类别数量 
+        self.n_words=38284    # 单词数量
+        self.num_epochs = 10                                           # epoch数
+        self.subcategory_nums=285+1 # 子类别数量
+        self.history_len=20  # 历史序列长度
+        self.negsample_size=3   # 负样本采样规模
+        self.max_candidate_size=200  # 候选样本最大长度
+        self.news_nums=21482
+        self.user_nums=38364
+        self.article_embedding_pretrained =  'GLOBO/article_embed.npz'
+    
     """
     NRMS
     """
     def __nrms__(self):
         self.title_size=512 
         self.feature_size=712
-        self.news_feature_size=600
-        
-        # self.bert_embed_size=512
+        self.news_feature_size=250 #600
 
         self.query_vector_dim=200  # additive attn 向量维度
         self.query_vector_dim_large= 400 
 
-        self.news_encoder_size=600
-        self.long_short_term_method='ini'
+        self.news_encoder_size=250 # 600
 
-        self.user_heads_num=6      # 
+        self.user_heads_num=5      # mind: 6
         self.num_heads_2=4         # 
-        self.list_num_heads=8         # 
 
         self.kernel_sizes = 3 # 
         self.kernel_sizes_2 = [2,4]
-        self.num_filters=400
+
         self.filter_nums_2=50
         self.title_heads_num=6
-        self.num_attention_heads=10
+
   
     def __gnud__(self):
         self.title_size=512 
@@ -155,3 +177,11 @@ class Config(object):
         self.filter_nums_2=50
         self.title_heads_num=6
         self.num_attention_heads=10
+
+    def __lstur__(self):
+        self.long_short_term_method='con'
+        if self.dataset=="GLOBO":
+            self.news_encoder_size= 250
+        else:
+            self.news_encoder_size= 300
+        self.masking_probability=0.5
