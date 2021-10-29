@@ -133,7 +133,7 @@ def train(config, model, train_iter, dev_iter, news_iter ):
         if auc>AUC_best:
             AUC_best=auc
             if config.save_flag:
-                torch.save(model.state_dict(), config.save_path+'T{}_{}_epoch{}_iter_{}_auc_{:.3f}.ckpt'.format(time.strftime('%m-%d_%H.%M'),config.model_name,config.num_epochs,total_batch,AUC_best))
+                torch.save(model.state_dict(), config.save_path+'{}_epoch{}_iter_{}_auc_{:.3f}.ckpt'.format(config.model_name,config.num_epochs,total_batch,AUC_best))
 
         if flag:
             break
@@ -182,18 +182,20 @@ def evaluate(model, data_iter, news_iter):
                                 final_scores[4])
         print(eval_res)
     return final_scores[0], eval_res 
+
 def log_res(config,auc,step,mode="val"):
     if not  os.path.exists(config.log_path):
         os.mkdir(config.log_path) 
-    with open(config.log_path+'/res_{}.txt'.format(config.version),'a+') as f:
+    with open(config.log_path+'/{}_res_{}.txt'.format(config.dataset, config.version),'a+') as f:
         f.write('{}\t{}\t{}\t{}\n'.format(time.strftime('%m-%d_%H.%M'),step,auc,mode))
 
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='MIND')
 
-    parser.add_argument('--version', type=str, default="nrms", help='choose the proper model')  
+    parser.add_argument('--version', type=str, default="", help='experiment comment')  
     parser.add_argument('--model', type=str, default="nrms", help='choose the proper model')          
+    parser.add_argument('--data', type=str, default="GLOBO", help='choose the proper dataset') 
 
     args = parser.parse_args()
 
@@ -206,7 +208,7 @@ if __name__=='__main__':
     # config.__nrms__()
     # config=Config('GNUD', 'MIND')
     # config.__gnud__()
-    config=Config(args.model, 'GLOBO')
+    config=Config(args.model, args.data)
 
     config.version=args.version
     with open(os.path.join(config.data_path,config.train_data), 'rb') as f:
@@ -217,7 +219,7 @@ if __name__=='__main__':
     #     news_dict=pickle.load(f)
     train_iter = get_data_loader(config, train_data)
 
-    val_iter = get_data_loader(config, val_data)
+    val_iter = get_data_loader(config, val_data, is_train=False)
 
     # data=NewsDataset(news_dict)
     # news_iter = DataLoader(dataset=data, 

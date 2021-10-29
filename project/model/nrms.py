@@ -85,7 +85,7 @@ class NewsEncoder(torch.nn.Module):
             
             for _ids in title_ids:
                 title_embedded = self.word_embedding(_ids) 
-                attn_output = self.multi_head_self_attention(title_embedded,title_embedded,title_embedded)
+                attn_output, _ = self.multi_head_self_attention(title_embedded,title_embedded,title_embedded)
                 title_vector = self.additive_attention(attn_output)
                 title_embeds_list.append(title_vector)
             
@@ -95,7 +95,7 @@ class NewsEncoder(torch.nn.Module):
             
             for _ids in abst_ids:
                 abst_embedded = self.word_embedding(_ids) 
-                attn_output = self.multi_head_self_attention(abst_embedded,abst_embedded,abst_embedded)
+                attn_output, _ = self.multi_head_self_attention(abst_embedded,abst_embedded,abst_embedded)
                 abst_vector = self.additive_attention(attn_output)
                 abst_embeds_list.append(abst_vector)
             

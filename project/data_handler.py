@@ -51,10 +51,13 @@ class NewsDataset(Dataset):
         browsed_absts=np.array(data["Abstract"],dtype=np.int)
         browsed_categ_ids=torch.LongTensor([data["Category"]])
         browsed_subcateg_ids=torch.LongTensor([data["SubCategory"]])
-
+        title_mask = np.where(browsed_titles > 0, 1, 0)
+        abst_mask = np.where(browsed_absts > 0, 1, 0)
         return {'ids': browsed_ids,
                 'titles':browsed_titles,\
                 'absts':browsed_absts,\
+                'title_mask':title_mask,\
+                'abst_mask':abst_mask,\
                 #'browsed_entity_ids':browsed_entity_ids,\
                 'categ_ids':browsed_categ_ids,\
                 'subcateg_ids':browsed_subcateg_ids}
@@ -104,6 +107,8 @@ class MyDataset(Dataset):
         browsed_mask=torch.ByteTensor([1 for _ in range(x)]+[0 for _ in range(self.config.history_len-x )])
         browsed_titles[:x,:]=np.array([self.news_dict[i]["Title"] for i in data[0]] )
         browsed_absts[:x,:]=np.array([self.news_dict[i]["Abstract"]  for i in data[0]] )
+        browsed_title_mask = np.where(browsed_titles > 0, 1, 0)
+        browsed_abst_mask = np.where(browsed_absts > 0, 1, 0)
 
         browsed_categ_ids[:x]=np.array([self.news_dict[i]["Category"]  for i in data[0]] )
         browsed_subcateg_ids[:x]=np.array([self.news_dict[i]["SubCategory"]  for i in data[0]] )
@@ -113,6 +118,9 @@ class MyDataset(Dataset):
         candidate_ids[:y]=np.array([self.news_dict[i]["index"] for i in data[1][:self.sample_size]])
         candidate_titles[:y,:]=np.array([self.news_dict[i]["Title"] for i in data[1][:self.sample_size]])
         candidate_absts[:y,:]=np.array([self.news_dict[i]["Abstract"]  for i in data[1][:self.sample_size]] )
+        candidate_title_mask = np.where(candidate_titles > 0, 1, 0)
+        candidate_abst_mask = np.where(candidate_absts > 0, 1, 0)
+
 
         candidate_categ_ids[:y]=np.array([self.news_dict[i]["Category"]  for i in data[1][:self.sample_size]])
         candidate_subcateg_ids[:y]=np.array([self.news_dict[i]["SubCategory"]  for i in data[1][:self.sample_size]] )
@@ -125,6 +133,8 @@ class MyDataset(Dataset):
                 'browsed_lens':browsed_lens,\
                 'browsed_titles':browsed_titles,\
                 'browsed_absts':browsed_absts,\
+                'browsed_title_mask':browsed_title_mask,\
+                'browsed_abst_mask':browsed_abst_mask,\
                 #'browsed_entity_ids':browsed_entity_ids,\
                 'browsed_categ_ids':browsed_categ_ids,\
                 'browsed_subcateg_ids':browsed_subcateg_ids,\
@@ -136,6 +146,8 @@ class MyDataset(Dataset):
                 #'candidate_entity_ids':candidate_entity_ids,\
                 'candidate_categ_ids':candidate_categ_ids,
                 'candidate_subcateg_ids':candidate_subcateg_ids,
+                'candidate_title_mask':candidate_title_mask,\
+                'candidate_abst_mask':candidate_abst_mask,\
                 'candidate_mask':candidate_mask}
 
 
@@ -204,6 +216,7 @@ class GloboDataset(Dataset):
                 # 'candidate_categ_ids':candidate_categ_ids,
                 # 'candidate_subcateg_ids':candidate_subcateg_ids,
                 'candidate_mask':candidate_mask}
+
 
 def get_data_loader(config, data, is_train = True):
     if config.dataset == "GLOBO":

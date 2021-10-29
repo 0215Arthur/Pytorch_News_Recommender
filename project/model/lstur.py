@@ -59,7 +59,7 @@ class NewsEncoder(torch.nn.Module):
             self.subcategory_embedding =nn.Embedding(config.subcategory_nums, config.cate_embed_size, padding_idx=0)
             self.word_embedding = [nn.Embedding.from_pretrained(torch.tensor(
                 np.load( config.data_path +config.word_embedding_pretrained)["embeddings"].astype('float32')), 
-                freeze=False,padding_idx=0).to(config.device),
+                freeze=True,padding_idx=0).to(config.device),
                 nn.Dropout(p=config.dropout, inplace=False)]
 
             self.word_embedding = nn.Sequential(*self.word_embedding)
@@ -72,7 +72,7 @@ class NewsEncoder(torch.nn.Module):
                 padding=(int((config.kernel_sizes - 1) / 2), 0))
             self.title_attention = AdditiveAttention(config.query_vector_dim,
                                                     config.num_filters)
-
+    # @torchsnooper.snoop()
     def forward(self, data):
         """
         Args:
@@ -96,7 +96,7 @@ class NewsEncoder(torch.nn.Module):
             # Part 2: calculate subcategory_vector
 
             # batch_size, num_filters
-            subcategory_vector = self.category_embedding(
+            subcategory_vector = self.subcategory_embedding(
                 news_subcateg)
 
             # Part 3: calculate weighted_title_vector
@@ -110,7 +110,7 @@ class NewsEncoder(torch.nn.Module):
                 title_vector.unsqueeze(dim=1)).squeeze(dim=3)
             # batch_size, num_filters, num_words_title
             activated_title_vector = F.dropout(F.relu(convoluted_title_vector),
-                                            p=self.config.dropout_probability,
+                                            p=self.config.dropout,
                                             training=self.training)
             # batch_size, num_filters
             weighted_title_vector = self.title_attention(
@@ -169,7 +169,7 @@ class Model(torch.nn.Module):
     LSTUR network.
     Input 1 + K candidate news and a list of user clicked news, produce the click probability.
     """
-    def __init__(self, config, pretrained_word_embedding=None):
+    def __init__(self, config):
         """
         # ini
         user embedding: num_filters * 3
@@ -215,15 +215,15 @@ class Model(torch.nn.Module):
         else:
             clicked_news=batch['browsed_titles'].to(torch.device('cuda')).permute(1,0,2) 
             
-            browsed_categ=batch['browsed_categ_ids'].to(torch.device('cuda')).permute(1,0,2)
+            browsed_categ=batch['browsed_categ_ids'].to(torch.device('cuda')).permute(1,0)
             
-            browsed_subcateg=batch['browsed_subcateg_ids'].to(torch.device('cuda')).permute(1,0,2)
+            browsed_subcateg=batch['browsed_subcateg_ids'].to(torch.device('cuda')).permute(1,0)
 
             candidate_news=batch['candidate_titles'].to(torch.device('cuda')).permute(1,0,2)
 
-            candidate_categ=batch['candidate_categ_ids'].to(torch.device('cuda')).permute(1,0,2)
+            candidate_categ=batch['candidate_categ_ids'].to(torch.device('cuda')).permute(1,0)
 
-            candidate_subcateg=batch['candidate_subcateg_ids'].to(torch.device('cuda')).permute(1,0,2)
+            candidate_subcateg=batch['candidate_subcateg_ids'].to(torch.device('cuda')).permute(1,0)
 
             candidate_news_vector = torch.stack(
                 [self.news_encoder(x) for x in zip(candidate_news,candidate_categ,candidate_subcateg)], dim=1)

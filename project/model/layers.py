@@ -70,6 +70,17 @@ class MultiHeadSelfAttention(nn.Module):
         self.attention = Attention()
 
         self.dropout = nn.Dropout(p=dropout)
+    
+    def initialize(self):
+        for parameter in self.linear_layers.parameters():
+            if len(parameter.size()) >= 2:
+                nn.init.xavier_uniform_(parameter.data)
+            else:
+                nn.init.zeros_(parameter.data)
+        nn.init.xavier_uniform_(self.output_linear.weight)
+        nn.init.zeros_(self.output_linear.bias)
+
+
   #  @torchsnooper.snoop()
     def forward(self, query, key, value, mask=None, topic=None, save_attn=False):
         batch_size = query.size(0)
@@ -95,9 +106,12 @@ class AdditiveAttention(torch.nn.Module):
         self.linear = nn.Linear(input_vector_dim, query_vector_dim)
 
         ## change: uniform_(-1,1)->uniform_(-0.1,0.1)
-
-
         self.query_vector = nn.Parameter(torch.empty(query_vector_dim).uniform_(-0.1, 0.1)) 
+    
+    def initialize(self):
+        nn.init.xavier_uniform_(self.linear.weight, gain=nn.init.calculate_gain('tanh'))
+        nn.init.zeros_(self.linear.bias)
+    
 
     def forward(self, input,mask=None):
         '''
@@ -117,4 +131,56 @@ class AdditiveAttention(torch.nn.Module):
         result = torch.bmm(weight.unsqueeze(dim=1), input).squeeze(dim=1)
         return result
 
- 
+class CNEAttention(nn.Module):
+    def __init__(self, feature_dim: int, attention_dim: int):
+        super(CNEAttention, self).__init__()
+        self.affine1 = nn.Linear(in_features=feature_dim, out_features=attention_dim, bias=True)
+        self.affine2 = nn.Linear(in_features=attention_dim, out_features=1, bias=False)
+
+    def initialize(self):
+        nn.init.xavier_uniform_(self.affine1.weight, gain=nn.init.calculate_gain('tanh'))
+        nn.init.zeros_(self.affine1.bias)
+        nn.init.xavier_uniform_(self.affine2.weight)
+
+    # Input
+    # feature : [batch_size, length, feature_dim]
+    # mask    : [batch_size, length]
+    # Output
+    # out     : [batch_size, feature_dim]
+    def forward(self, feature, mask=None):
+        attention = torch.tanh(self.affine1(feature))                                 # [batch_size, length, attention_dim]
+        a = self.affine2(attention).squeeze(dim=2)                                    # [batch_size, length]
+        if mask is not None:
+            alpha = F.softmax(a.masked_fill(mask == 0, -1e9), dim=1).unsqueeze(dim=1) # [batch_size, 1, length]
+        else:
+            alpha = F.softmax(a, dim=1).unsqueeze(dim=1)                              # [batch_size, 1, length]
+        out = torch.bmm(alpha, feature).squeeze(dim=1)                                # [batch_size, feature_dim]
+        return out
+
+
+class ScaledDotProduct_CandidateAttention(nn.Module):
+    def __init__(self, feature_dim: int, query_dim: int, attention_dim: int):
+        super(ScaledDotProduct_CandidateAttention, self).__init__()
+        self.K = nn.Linear(in_features=feature_dim, out_features=attention_dim, bias=False)
+        self.Q = nn.Linear(in_features=query_dim, out_features=attention_dim, bias=True)
+        self.attention_scalar = math.sqrt(float(attention_dim))
+
+    def initialize(self):
+        nn.init.xavier_uniform_(self.K.weight)
+        nn.init.xavier_uniform_(self.Q.weight)
+        nn.init.zeros_(self.Q.bias)
+
+    # Input
+    # feature : [batch_size, feature_num, feature_dim]
+    # query   : [batch_size, query_dim]
+    # mask    : [batch_size, feature_num]
+    # Output
+    # out     : [batch_size, feature_dim]
+    def forward(self, feature, query, mask=None):
+        a = torch.bmm(self.K(feature), self.Q(query).unsqueeze(dim=2)).squeeze(dim=2) / self.attention_scalar # [batch_size, feature_num]
+        if mask is not None:
+            alpha = F.softmax(a.masked_fill(mask == 0, -1e9), dim=1)                                          # [batch_size, feature_num]
+        else:
+            alpha = F.softmax(a, dim=1)                                                                       # [batch_size, feature_num]
+        out = torch.bmm(alpha.unsqueeze(dim=1), feature).squeeze(dim=1)                                       # [batch_size, feature_dim]
+        return out
