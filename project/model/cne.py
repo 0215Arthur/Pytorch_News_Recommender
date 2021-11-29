@@ -101,6 +101,10 @@ class NewsEncoder(nn.Module):
             self.title_cross_attention = ScaledDotProduct_CandidateAttention(self.hidden_dim * 2, self.hidden_dim * 2, config.attention_dim)
             self.content_cross_attention = ScaledDotProduct_CandidateAttention(self.hidden_dim * 2, self.hidden_dim * 2, config.attention_dim)
 
+            self.cate_attention = ScaledDotProduct_CandidateAttention(self.hidden_dim * 2, config.cate_embed_size, config.attention_dim)
+            self.subcate_attention = ScaledDotProduct_CandidateAttention(self.hidden_dim * 2, config.cate_embed_size, config.attention_dim)
+            self.cate_fc = nn.Linear(in_features=config.cate_embed_size * 2, out_features=config.news_feature_size, bias=False)
+
     def initialize(self):
         nn.init.uniform_(self.category_embedding.weight, -0.1, 0.1)
         nn.init.uniform_(self.subcategory_embedding.weight, -0.1, 0.1)
@@ -125,6 +129,8 @@ class NewsEncoder(nn.Module):
         self.content_self_attention.initialize()
         self.title_cross_attention.initialize()
         self.content_cross_attention.initialize()
+        self.cate_attention.initialize()
+        self.subcate_attention.initialize()
     
     # @torchsnooper.snoop()
     def forward(self, data):
@@ -150,6 +156,8 @@ class NewsEncoder(nn.Module):
         # 2. selective LSTM encoding
         sorted_title_h, (sorted_title_h_n, sorted_title_c_n) = self.title_lstm(sorted_title)
         sorted_content_h, (sorted_content_h_n, sorted_content_c_n) = self.content_lstm(sorted_content)
+        # sorted_title_h, sorted_title_c_n = self.title_lstm(sorted_title)
+        # sorted_content_h, sorted_content_c_n = self.content_lstm(sorted_content)
         sorted_title_m = torch.cat([sorted_title_c_n[0], sorted_title_c_n[1]], dim=1)                                                                      # [batch_size * news_num, hidden_dim * 2]
         sorted_content_m = torch.cat([sorted_content_c_n[0], sorted_content_c_n[1]], dim=1)                                                                # [batch_size * news_num, hidden_dim * 2]
         sorted_title_h, _ = pad_packed_sequence(sorted_title_h, batch_first=True, total_length=self.max_title_length)                                      # [batch_size * news_num, max_title_length, hidden_dim * 2]
@@ -162,9 +170,25 @@ class NewsEncoder(nn.Module):
         title_self = self.title_self_attention(title_h, title_mask)                                                                                        # [batch_size * news_num, hidden_dim * 2]
         content_self = self.content_self_attention(content_h, content_mask)                                                                                # [batch_size * news_num, hidden_dim * 2]
         # 4. cross-attention
+        category_representation = self.category_embedding(category).view([batch_size * news_num, -1])                                                                                    # [batch_size, news_num, category_embedding_dim]
+        subCategory_representation = self.subcategory_embedding(subCategory).view([batch_size * news_num, -1])  
+        topic = category_representation + subCategory_representation  
+        # print(topic.size(), title_self.size())
         title_cross = self.title_cross_attention(title_h, content_self, title_mask)                                                                        # [batch_size * news_num, hidden_dim * 2]
         content_cross = self.content_cross_attention(content_h, title_self, content_mask)                                                                  # [batch_size * news_num, hidden_dim * 2]
-        news_representation = torch.cat([title_self + title_cross, content_self + content_cross], dim=1).view([batch_size, news_num, self.hidden_dim * 4]) # [batch_size, news_num, hidden_dim * 4]
+        # title_cate_cross = self.cate_attention(title_h, category_representation, title_mask)                                                                        # [batch_size * news_num, hidden_dim * 2]
+        # content_cate_cross = self.cate_attention(content_h, category_representation, content_mask)  
+        # title_subcate_cross = self.subcate_attention(title_h, subCategory_representation, title_mask)                                                                        # [batch_size * news_num, hidden_dim * 2]
+        # content_subcate_cross = self.subcate_attention(content_h, subCategory_representation, content_mask) 
+        # news_representation = torch.cat([title_self + title_cross + title_cate_cross + title_subcate_cross,\
+        #                                 content_self + content_cross + content_subcate_cross + content_cate_cross], dim=1).view([batch_size, news_num, self.hidden_dim * 4]) # [batch_size, news_num, hidden_dim * 4]
+        
+        news_representation = torch.cat([title_self + title_cross,\
+                                         content_self + content_cross#,\
+                                        #  title_cate_cross + content_cate_cross,\
+                                        #  title_subcate_cross + content_subcate_cross\
+                                         ], dim=1).view([batch_size, news_num, self.hidden_dim * 4]) # [batch_size, news_num, hidden_dim * 4]
+        
         # 5. feature fusion
         news_representation = self.feature_fusion(news_representation, category, subCategory)                                                              # [batch_size, news_num, news_embedding_dim]
         return news_representation
@@ -172,7 +196,9 @@ class NewsEncoder(nn.Module):
     def feature_fusion(self, news_representation, category, subCategory):
         category_representation = self.category_embedding(category)                                                                                    # [batch_size, news_num, category_embedding_dim]
         subCategory_representation = self.subcategory_embedding(subCategory)                                                                           # [batch_size, news_num, subCategory_embedding_dim]
-        news_representation = torch.cat([news_representation, self.dropout(category_representation), self.dropout(subCategory_representation)], dim=2) # [batch_size, news_num, news_embedding_dim]
+        topic = torch.cat([self.dropout(category_representation), self.dropout(subCategory_representation)], dim=-1 )
+        # news_representation = torch.cat([news_representation, self.dropout(category_representation), self.dropout(subCategory_representation)], dim=2) # [batch_size, news_num, news_embedding_dim]
+        news_representation = news_representation * self.cate_fc(topic)
         return news_representation
 
 class UserEncoder(torch.nn.Module):

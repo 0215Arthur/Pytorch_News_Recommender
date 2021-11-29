@@ -20,7 +20,7 @@ class NewsEncoder(torch.nn.Module):
             try:
                 self.article_embedding = nn.Embedding.from_pretrained(torch.tensor(
                     np.load(config.data_path + config.article_embedding_pretrained)["embeddings"].astype('float32')), 
-                    freeze=True,padding_idx=0).to(config.device)
+                    freeze=True, padding_idx=0).to(config.device)
                 print(self.article_embedding.weight.size())
             except:
                 print("load article embedding error.")
@@ -90,7 +90,7 @@ class NewsEncoder(torch.nn.Module):
                 title_embeds_list.append(title_vector)
             
             title_vector=torch.stack(title_embeds_list).permute(1,0,2)
-
+            
             abst_ids=abst_ids.permute(1,0,2)
             
             for _ids in abst_ids:

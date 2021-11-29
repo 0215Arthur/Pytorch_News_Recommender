@@ -151,6 +151,94 @@ class MyDataset(Dataset):
                 'candidate_mask':candidate_mask}
 
 
+
+class AdrDataset(Dataset):
+    def __init__(self, config, datas, news_dict, is_train=True):
+        super(AdrDataset, self).__init__()
+        self.config = config
+        self.data_type = type
+        self.bacthes=datas
+        self.news_dict=news_dict
+        #self.entity_dict=np.load('../data_processed/entitiy_ids.npz')['embeddings'].astype('int')
+        #self.entity_nums=config.entity_nums
+        if is_train:
+            self.sample_size=self.config.negsample_size+1
+        else:
+            self.sample_size=self.config.max_candidate_size
+        print('dataset batch nums: ',len(datas)//config.batch_size)
+        
+    def __len__(self):
+        return len(self.bacthes)
+
+    def __getitem__(self, index):
+        # userId, hist_list, time_list, cand_list
+        data=self.bacthes[index]
+         
+        browsed_ids=np.zeros((self.config.history_len),dtype=np.int)
+        candidate_ids=np.zeros((self.sample_size),dtype=np.int)
+
+        #print(data[0])
+        # 初始化
+        browsed_titles=np.zeros((self.config.history_len,self.config.n_words_title),dtype=np.int)
+        browsed_categ_ids=np.zeros((self.config.history_len),dtype=np.int)
+        browsed_subcateg_ids=np.zeros((self.config.history_len),dtype=np.int)
+
+        candidate_titles=np.zeros((self.sample_size,self.config.n_words_title),dtype=np.int)
+        candidate_categ_ids=np.zeros((self.sample_size),dtype=np.int)
+        #browsed_entity_ids=self.entity_dict[browsed_ids][:,:self.entity_nums]
+        candidate_subcateg_ids=np.zeros((self.sample_size),dtype=np.int)
+   
+        hist=data[1][-self.config.history_len:]
+        x = len(hist)
+        # print(x)
+        browsed_lens=len(hist)
+        browsed_ids[:x] = np.array(hist)
+        browsed_mask=torch.ByteTensor([1 for _ in range(x)]+[0 for _ in range(self.config.history_len-x )])
+        # print("hist",hist)
+        # print([self.news_dict[i]["titleid"] + [0] *(self.config.n_words_title - len(self.news_dict[i]["titleid"])) for i in hist])
+        browsed_titles[:x,:]=np.array([self.news_dict[i]["titleid"][:self.config.n_words_title ] +\
+                                        [0] *(self.config.n_words_title - len(self.news_dict[i]["titleid"])) for i in hist] )
+        browsed_title_mask = np.where(browsed_titles > 0, 1, 0)
+      
+        browsed_categ_ids[:x]=np.array([self.news_dict[i]["categoryid"]  for i in hist] )
+        browsed_subcateg_ids[:x]=np.array([self.news_dict[i]["subcategoryid"]  for i in hist] )
+            # 对训练集而言： 需要构造新闻imps的数据特征； 
+            # 而测试和验证集，均不需要，直接统一填充即可
+        cands=data[3][:self.sample_size]
+        y = len(cands)
+        candidate_ids[:y]=np.array(cands)
+        candidate_titles[:y,:]=np.array([self.news_dict[i]["titleid"][:self.config.n_words_title ] +\
+                                            [0] *(self.config.n_words_title - len(self.news_dict[i]["titleid"])) for i in cands])
+        candidate_title_mask = np.where(candidate_titles > 0, 1, 0)
+      
+
+        candidate_categ_ids[:y]=np.array([self.news_dict[i]["categoryid"]  for i in cands])
+        candidate_subcateg_ids[:y]=np.array([self.news_dict[i]["subcategoryid"]  for i in cands] )
+
+        #candidate_entity_ids=self.entity_dict[candidate_ids][:,:self.entity_nums]
+        candidate_mask=torch.ByteTensor([1 for _ in range(y)]+[0 for _ in range(self.sample_size-y)])
+        user_id = np.array([data[0]], dtype=np.int)
+        return {
+                'user_id': user_id,\
+                'browsed_ids': browsed_ids,
+                'browsed_lens':browsed_lens,\
+                'browsed_titles':browsed_titles,\
+                'browsed_title_mask':browsed_title_mask,\
+                #'browsed_entity_ids':browsed_entity_ids,\
+                'browsed_categ_ids':browsed_categ_ids,\
+                'browsed_subcateg_ids':browsed_subcateg_ids,\
+                'browsed_mask':browsed_mask,\
+                'candidate_ids': candidate_ids,
+                'candidate_lens':y,\
+                'candidate_titles':candidate_titles,\
+                #'candidate_entity_ids':candidate_entity_ids,\
+                'candidate_categ_ids':candidate_categ_ids,
+                'candidate_subcateg_ids':candidate_subcateg_ids,
+                'candidate_title_mask':candidate_title_mask,\
+                'candidate_mask':candidate_mask
+                }
+
+
 class GloboDataset(Dataset):
     def __init__(self, config, datas, is_train=True):
         super(GloboDataset, self).__init__()
@@ -227,10 +315,22 @@ def get_data_loader(config, data, is_train = True):
                                 drop_last=False,
                                 shuffle=is_train,
                                 pin_memory=False)
-    else:
+    elif config.dataset == "MIND":
         with open(os.path.join(config.data_path, "MIND/news.pkl"),'rb') as f:
             news_dict=pickle.load(f)
         data=MyDataset(config, data, news_dict, is_train)
+        data_iter = DataLoader(dataset=data, 
+                                batch_size=config.batch_size, 
+                                num_workers=4,
+                                drop_last=False,
+                                shuffle=is_train,
+                                pin_memory=False)
+    else:
+        # with open(os.path.join(config.data_path, "ADR/news.json"),'r') as f:
+        #     news_dict=json.load(f)
+        with open(os.path.join(config.data_path, "ADR/news.pkl"),'rb') as f:
+            news_dict=pickle.load(f)
+        data=AdrDataset(config, data, news_dict, is_train)
         data_iter = DataLoader(dataset=data, 
                                 batch_size=config.batch_size, 
                                 num_workers=4,
@@ -245,37 +345,19 @@ if __name__ == "__main__":
     # for k, v in word_dict.items():
     #     print(k,v)
     #     break
-    config = Config()
-    config.__MIND__()
+    config = Config(dataset="ADR")
     
-    
-    with open("./dataset_processed/MIND/train_datas.pkl", 'rb') as f:
+    with open(os.path.join(config.data_path,config.train_data), 'rb') as f:
         train_data=pickle.load(f)
     
-    with open(os.path.join(config.data_path, "MIND/news.pkl"),'rb') as f:
-        news_dict=pickle.load(f)
-    print(len(news_dict))
-    data=MyDataset(config,train_data, news_dict)
-    train_iter = DataLoader(dataset=data, 
-                              batch_size=256, 
-                              num_workers=4,
-                              drop_last=False,
-                              shuffle=False,
-                              pin_memory=False)
-
-    data=NewsDataset(news_dict)
-    news_iter = DataLoader(dataset=data, 
-                              batch_size=256, 
-                              num_workers=4,
-                              drop_last=False,
-                              shuffle=False,
-                              pin_memory=False)
-    # for i,_ in enumerate(news_iter):
-    #     print(i)
-    #     print(_["ids"])
-        #print(i)
-        #break
-    #print(train_iter.__len__())
+    train_iter = get_data_loader(config, train_data, is_train=True)
+    
+    for i,_ in enumerate(train_iter):
+        print(i)
+        # print(_)
+        # print(i)
+        # break
+    print(train_iter.__len__())
 
     # dev_data=load_dataset(config,'dev_datas.pkl',config.data_path,_type=1)
     # print(len(dev_data))

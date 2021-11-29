@@ -40,9 +40,9 @@ def train(config, model, train_iter, dev_iter, news_iter ):
     flag = False  # 记录是否很久没有效果提升
     #writer = SummaryWriter(log_dir=config.log_path + '/' + time.strftime('%m-%d_%H.%M', time.localtime()))
     
-    AUC_best=0.56
+    AUC_best=0.60
     loss_list=[]
-    STEP_SIZE=100
+    STEP_SIZE=200
     improve='*'
     criterion =nn.CrossEntropyLoss()
     if config.warm_up:
@@ -213,24 +213,27 @@ if __name__=='__main__':
     config.version=args.version
     with open(os.path.join(config.data_path,config.train_data), 'rb') as f:
         train_data=pickle.load(f)
+        
     with open(os.path.join(config.data_path,config.val_data), 'rb') as f:
         val_data=pickle.load(f)
     # with open(os.path.join(config.data_path, "MIND/news.pkl"),'rb') as f:
     #     news_dict=pickle.load(f)
-    train_iter = get_data_loader(config, train_data)
+    train_iter = get_data_loader(config, train_data, is_train=True)
 
     val_iter = get_data_loader(config, val_data, is_train=False)
 
-    # data=NewsDataset(news_dict)
-    # news_iter = DataLoader(dataset=data, 
-    #                           batch_size=1280, 
-    #                           num_workers=4,
-    #                           drop_last=False,
-    #                           shuffle=False,
-    #                           pin_memory=False)
     model=Model(config).to(config.device)
     recommender=Model(config)
-
+    if args.data == "GLOBO" or args.model.lower()  == 'fim':
+        news_iter = None
+    else:
+        data=NewsDataset(news_dict)
+        news_iter = DataLoader(dataset=data, 
+                                  batch_size=1280, 
+                                  num_workers=4,
+                                  drop_last=False,
+                                  shuffle=False,
+                                  pin_memory=False)
     train(config,model,train_iter,val_iter, news_iter=None)
 
 

@@ -29,8 +29,8 @@ class Config(object):
         
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # 设备        
 
-        self.eval_step=200
-        self.batch_size = 256                                          # mini-batch大小
+        self.eval_step=400
+        self.batch_size = 128                                          # mini-batch大小
         self.learning_rate = 1e-3   
         self.dropout = 0.2                                              # 随机失活
         self.require_improvement = 10000                                 # 若超过1000batch效果还没提升，则提前结束训练
@@ -40,6 +40,8 @@ class Config(object):
             self.__MIND__()
         elif dataset.upper() == "GLOBO":
             self.__GLOBO__()
+        elif dataset.upper() == "ADR":
+            self.__ADR__()
         self.dataset = dataset.upper()
         if model_name.lower() == "nrms":
             self.__nrms__()
@@ -51,7 +53,8 @@ class Config(object):
             self.__cne__()
         elif model_name.lower() == 'cnep':
             self.__cnep__()
-
+        elif model_name.lower() == 'fim':
+            self.__fim__()
 
     def __MIND__(self):
         """
@@ -86,6 +89,23 @@ class Config(object):
         self.user_nums=38364
         self.article_embedding_pretrained =  'GLOBO/article_embed.npz'
     
+    def __ADR__(self):
+        self.word_embed_size=50                                      #单词嵌入维度
+        self.category_nums=18 + 1  #类别数量 
+        self.n_words=18417    # 单词数量
+        self.num_epochs = 10                                           # epoch数
+        self.subcategory_nums=103 # 子类别数量
+        self.entity_nums=10      # 单个新闻实体数量
+        self.n_words_title=10  # 标题单词长度
+        # self.n_words_abst=40   # 摘要单词长度
+        self.history_len=20  # 历史序列长度
+        self.negsample_size=4   # 负样本采样规模
+        self.max_candidate_size=100  # 候选样本最大长度
+        self.user_nums=203453
+        self.news_nums=15309
+        self.word_embedding_pretrained =  'MIND/all_word_embedding.npz'
+        self.entity_embedding_pretrained=  'MIND/entitiy_embeds.npz'
+
     def __nrms__(self):
         # self.title_size=512 
         # self.feature_size=712
@@ -93,6 +113,7 @@ class Config(object):
             self.news_feature_size=250 #600
             self.query_vector_dim=200 
             self.news_encoder_size=250
+            self.query_vector_dim_large= 400 
             self.user_heads_num=5 
         else: 
             self.news_feature_size=600
@@ -195,12 +216,12 @@ class Config(object):
         self.query_vector_dim=200
     
     def __cne__(self):
-        self.cate_embed_size=100 # 类别嵌入大小
+        self.cate_embed_size=200 # 类别嵌入大小
         self.hidden_dim=200
         self.attention_dim=200
         self.query_vector_dim=200  # additive attn 向量维度
-        self.news_feature_size= 1000
-        self.user_heads_num=4      # mind: 6
+        self.news_feature_size= 800
+        self.user_heads_num=8      # mind: 6
 
     def __cnep__(self):
         self.cate_embed_size=100 # 类别嵌入大小
@@ -209,3 +230,11 @@ class Config(object):
         self.news_feature_size= 800
         self.user_heads_num=4      # mind: 6
         self.title_heads_num=6
+
+    def __fim__(self):
+        self.dilation_level=3
+        self.npratio=4
+        self.filter_num=150
+        self.kernel_size=3
+
+        

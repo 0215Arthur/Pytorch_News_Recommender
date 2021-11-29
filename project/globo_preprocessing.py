@@ -30,7 +30,10 @@ def merge_log(df, start, mid, end):
     指定时间戳，进行窗口内合并操作
     """
     # print(start, mid, end)
-    his_df = df[(df["click_timestamp"] >= start * 1000) & (df["click_timestamp"] < mid * 1000)].groupby("user_id")["click_article_id"].agg(list)
+    _df = df[(df["click_timestamp"] >= start * 1000) & (df["click_timestamp"] < mid * 1000)].reset_index(drop=True)
+   
+    
+    his_df = _df.groupby("user_id")["click_article_id"].agg(list)
     his_df = his_df.reset_index()
     print(his_df.shape)
 
@@ -39,7 +42,7 @@ def merge_log(df, start, mid, end):
     print(target_df.shape)
 
     res_df = pd.merge(target_df, his_df, how='inner', on='user_id')
-    print(res_df.shape)
+    # print(res_df.shape)
     return res_df
 
 def process_log():
@@ -50,11 +53,12 @@ def process_log():
     单条数据： [historical news],[read news]
     """
     hours = []
-    for i in range(336):
+    for i in range(192):#336
         hour = str(i).zfill(3)
         df = pd.read_csv(root_path + "clicks/clicks/clicks_hour_{}.csv".format(hour))
         hours.append(df)
     df = pd.concat(hours)
+    df = df.sort_values(by="click_timestamp")
     start_time = time.mktime(time.strptime("2017-10-01", '%Y-%m-%d'))
     res = []
     for i in range(7):
@@ -68,7 +72,7 @@ def process_log():
         start_time = (time.mktime(start_time.timetuple()))
     res_df = pd.concat(res)
     res_df.columns = ["user_id", "historical", "target"]
-    res_df.to_csv("./dataset_processed/Globo/data.csv",index=False)
+    # res_df.to_csv("./dataset_processed/Globo/data.csv",index=False)
 
 def split_data(val_ratio = 0.1, test_ratio = 0.1):
     """
@@ -161,6 +165,64 @@ def split_data(val_ratio = 0.1, test_ratio = 0.1):
     # val_num:  29147
     # test_num:  29147
 
+def _interval(df, start, mid, end):
+    # print(start, mid, end)
+    _df = df[(df["click_timestamp"] >= start * 1000) & (df["click_timestamp"] < mid * 1000)].reset_index(drop=True)
+    print(_df.shape)
+    _df['last'] = _df.groupby('user_id')['click_timestamp'].diff(1)
+    inter_df = _df[["user_id",'last']].dropna()
+    # print(inter_df.info())
+    # print(inter_df.describe())
+    # for _ in inter_df["last"].tolist():
+    #     if isinstance(_,int) or isinstance(_,float):
+    #         continue
+    #     print(_, type(_))
+    # _df=_df.dropna()
+    # print(_df.head())
+
+    inter_df['last']=inter_df['last'].astype(dtype='int',errors='ignore') 
+    u_df = inter_df.groupby("user_id")["last"].agg(["mean"])
+    print(_df.shape,inter_df.shape,u_df)
+    return inter_df,u_df.reset_index()
+
+
+def time_interval_desc():
+    """
+    时间间隔统计
+    - 用户平均间隔分布
+    - 整体间隔分布
+    """
+    hours = []
+    for i in range(336):#336
+        hour = str(i).zfill(3)
+        df =  pd.read_csv(root_path + "clicks/clicks/clicks_hour_{}.csv".format(hour))
+        # print(df.head())
+        #print(df.info())
+        hours.append(df)
+    df = pd.concat(hours)
+    df = df.sort_values(by="click_timestamp")
+    start_time = time.mktime(time.strptime("2017-10-01", '%Y-%m-%d'))
+    res = []
+    u_res = []
+    for i in range(7):
+        mid = datetime.datetime.fromtimestamp(start_time) + datetime.timedelta(days = 7)
+        mid = (time.mktime(mid.timetuple()))
+        end = datetime.datetime.fromtimestamp(start_time) + datetime.timedelta(days = 8)
+        end = (time.mktime(end.timetuple()))
+        print("start: {}-mid: {}-end:{}".format(start_time, mid, end))
+        inter_df, u_df = (_interval(df, start_time, mid, end))
+        res.append(inter_df)
+        u_res.append(u_df)
+        # break
+        start_time = datetime.datetime.fromtimestamp(start_time) + datetime.timedelta(days = 1)
+        start_time = (time.mktime(start_time.timetuple()))
+    res_df = pd.concat(res)
+    u_res_df = pd.concat(u_res)
+    res_df.columns = ["user_id", "interval"]
+    res_df.to_csv("globo_time_interval.csv",index=False)
+    u_res_df.columns = ["user_id", "interval"]
+    u_res_df.to_csv("globo_time_user_mean_interval.csv",index=False)
+
 
 def neg_sampling(sample, i, news_num=21482, K=3):
     # print(sample)
@@ -171,6 +233,7 @@ def neg_sampling(sample, i, news_num=21482, K=3):
     if i % 10000 == 0 and i > 0:
         print("processed {} samples".format(i))
     return [sample[0], sample[1], [sample[2]] + neg_samples]
+
 
 def load_article_embedding():
     """
@@ -189,6 +252,7 @@ def load_article_embedding():
 
 
 if __name__ == "__main__":
-    # process_log()
+    process_log()
+    # time_interval_desc()
     split_data()
     # load_article_embedding()
