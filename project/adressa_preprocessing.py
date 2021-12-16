@@ -31,6 +31,7 @@ from collections import Counter
 
 
 data="ADR"
+
 def word_embedding(file="./data/ADR/articles_filtered.json"):
     """
     训练生成word embedding
@@ -124,6 +125,16 @@ def split_data():
     df = df.sort_values(by="time").reset_index(drop=True)
     
     df['last'] = df.groupby('userId')['time'].diff(1)
+    # print(df["last"].describe())
+
+    # count    2.905513e+06
+    # mean     2.281474e+04
+    # std      4.741929e+04
+    # min      0.000000e+00
+    # 25%      6.400000e+01
+    # 50%      3.090000e+02
+    # 75%      2.400200e+04
+    # max      6.017880e+05
     df.fillna(0, inplace=True)
     # news_reid = dict(zip(df["newsUrl"].unique().tolist(), range(1, df["newsUrl"].nunique() + 1)))
     # print(df.describe())
@@ -159,6 +170,7 @@ def split_data():
     train_data = pd.merge(train_data, interval_train, how='inner', on='userId')
     test_data = pd.merge(df[df['day'] == 20170107], hist_data_test, how='inner', on='userId')
     test_data = pd.merge(test_data, interval_test, how='inner', on='userId')
+    
     print(train_data.shape, test_data.shape)
     print("news num:", len(news_reid))
     print("user num:", df["userId"].nunique())
@@ -224,11 +236,13 @@ def neg_sampling(sample, i, news_num=21482, K=3):
     """
     exclusion = [sample[1]] + [sample[3]]
     # print("neg_sampling")
+    intervals = sample[4]
+    intervals[0] = 0
     neg_samples = random.sample([_ for _ in range(1, news_num) if _ not in exclusion], K)
     # print(neg_samples)
     if i % 10000 == 0 and i > 0:
         print("processed {} samples".format(i))
-    return [sample[0], sample[3], sample[4], [sample[1]] + neg_samples]
+    return [sample[0], sample[3], intervals, [sample[1]] + neg_samples]
 
 
 

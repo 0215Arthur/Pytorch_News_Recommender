@@ -39,3 +39,9 @@ class Model(nn.Module):
         else:
             self.model.eval()
             return self.model(batch)
+    
+    def update_rep(self, *args, **kwargs):
+        return self.model.update_rep(*args, **kwargs)
+    
+    def predict(self, *args, **kwargs):
+        return self.model.predict(*args, **kwargs)

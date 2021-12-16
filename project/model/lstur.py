@@ -121,16 +121,21 @@ class NewsEncoder(torch.nn.Module):
                 [category_vector, subcategory_vector, weighted_title_vector],
                 dim=1)
             return news_vector
-
+    
+   
 class UserEncoder(torch.nn.Module):
     def __init__(self, config):
         super(UserEncoder, self).__init__()
         self.config = config
         #assert int(config.num_filters * 1.5) == config.num_filters * 1.5
-        self.gru = nn.GRU(
-            config.news_encoder_size,
-            config.news_encoder_size if config.long_short_term_method == 'ini'
-            else int(config.news_encoder_size / 2))
+        # self.gru = nn.GRU(
+        #     config.news_encoder_size,
+        #     config.news_encoder_size if config.long_short_term_method == 'ini'
+        #     else int(config.news_encoder_size / 2))
+        self.lstm = nn.LSTM(config.news_encoder_size, 
+                    config.news_encoder_size if config.long_short_term_method == 'ini' else int(config.news_encoder_size / 2), 
+                    batch_first=True, bidirectional=False)
+        # self.initialize()
     # @torchsnooper.snoop()
     def forward(self, user, clicked_news_length, clicked_news_vector):
         """
@@ -151,8 +156,12 @@ class UserEncoder(torch.nn.Module):
                 clicked_news_length,
                 batch_first=True,
                 enforce_sorted=False)
-            _, last_hidden = self.gru(packed_clicked_news_vector,
+            # _, (last_hidden, _) = self.title_lstm(sorted_title)
+            _, (last_hidden, _) = self.lstm(packed_clicked_news_vector,
                                       user.unsqueeze(dim=0))
+            # gru
+            # _, last_hidden = self.gru(packed_clicked_news_vector,
+            #                           user.unsqueeze(dim=0))
             return last_hidden.squeeze(dim=0)
         else:
             packed_clicked_news_vector = pack_padded_sequence(
@@ -160,9 +169,16 @@ class UserEncoder(torch.nn.Module):
                 clicked_news_length,
                 batch_first=True,
                 enforce_sorted=False)
-            _, last_hidden = self.gru(packed_clicked_news_vector)
+            # _, last_hidden = self.gru(packed_clicked_news_vector)
+            _, (last_hidden, _) = self.lstm(packed_clicked_news_vector)
             return torch.cat((last_hidden.squeeze(dim=0), user.squeeze()), dim=1)
 
+    def initialize(self):
+        for parameter in self.lstm.parameters():
+            if len(parameter.size()) >= 2:
+                nn.init.orthogonal_(parameter.data)
+            else:
+                nn.init.zeros_(parameter.data)
 
 class Model(torch.nn.Module):
     """
@@ -188,8 +204,9 @@ class Model(torch.nn.Module):
         self.config = config
         self.news_encoder = NewsEncoder(config)
         self.user_encoder = UserEncoder(config)
+        self.user_encoder.initialize()
         #self.click_predictor = DotProductClickPredictor()
-        
+        print("model name: lstur")
         self.user_embedding = nn.Embedding(
             config.user_nums,
             config.news_encoder_size if config.long_short_term_method == 'ini'
@@ -249,3 +266,5 @@ class Model(torch.nn.Module):
             pred = pred.masked_fill(sample_masks == 0, -1e9)
 
         return pred
+    
+ 

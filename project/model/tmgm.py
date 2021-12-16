@@ -1,7 +1,6 @@
 # coding: UTF-8
 """
-Neural News Recommendation with Multi-Head Self-Attention
-EMNLP2019 https://aclanthology.org/D19-1671/
+Time-aware Multi-Granularity User Preference Modeling, TMGM
 """
 import torch
 import torch.nn as nn
@@ -61,6 +60,18 @@ class NewsEncoder(torch.nn.Module):
         # # self.news_dense = nn.Sequential(*news_dense)
         # #self.Linear= nn.Linear(config.final_embed_size, config.final_embed_size)
         # self.Linear=nn.Sequential(*news_dense)
+    
+
+    def initialize(self):
+        if self.config.dataset != "GLOBO":
+            self.multi_head_self_attention.initialize()
+            self.additive_attention.initialize()
+            nn.init.uniform_(self.category_embedding.weight, -0.1, 0.1)
+            nn.init.zeros_(self.category_embedding.weight[0])
+            nn.init.uniform_(self.subcategory_embedding.weight, -0.1, 0.1)
+            nn.init.zeros_(self.subcategory_embedding.weight[0])
+
+
     # @torchsnooper.snoop()
     def forward(self, data, categ, attn_masks=None):
         '''
@@ -119,30 +130,61 @@ class NewsEncoder(torch.nn.Module):
 class UserEncoder(torch.nn.Module):
     def __init__(self, config):
         super(UserEncoder, self).__init__()
+        # self.encoder = nn.Sequential(
+        #             MultiHeadSelfAttention(config.user_heads_num, 
+        #                                              config.news_feature_size,
+        #                                              config.dropout),
+        #             AdditiveAttention(config.query_vector_dim_large, 
+        #                                             config.news_feature_size)
+        #             )
+        # self.encoder_2 = nn.Sequential(
+        #             MultiHeadSelfAttention(config.user_heads_num, 
+        #                                              config.news_feature_size,
+        #                                              config.dropout),
+        #             AdditiveAttention(config.query_vector_dim_large, 
+        #                                             config.news_feature_size)
+        #             )
         self.multi_head_self_attention = MultiHeadSelfAttention(config.user_heads_num, 
                                                      config.news_feature_size,
                                                      config.dropout)
                                                      
         self.additive_attention = AdditiveAttention(config.query_vector_dim_large, 
                                                     config.news_feature_size)
-    # @torchsnooper.snoop()
-    def forward(self, news_vectors,attn_masks):
-        attn_output = self.multi_head_self_attention(news_vectors,news_vectors,news_vectors,mask=attn_masks)
-        user_vector = self.additive_attention(attn_output,attn_masks)
-        return user_vector
     
     def initialize(self):
+        # for module in self.encoder:
+        #     module.initialize()
+
+        # for module in self.encoder_2:
+        #     module.initialize()        
+
         self.multi_head_self_attention.initialize()
         self.additive_attention.initialize()
 
 
-class ClickPredictor(nn.Module):
-    def __init__(self):
-        super(ClickPredictor, self).__init__()
+    # @torchsnooper.snoop()
+    def forward(self, news_vectors,attn_masks,time_mat):
+        k = time_mat.size()[1]
+        vectors = []
+        #print(time_mat.size())
+        for i in range(k):
+            
+            mat = time_mat[:,i,:,:]
+            # print(mat.size())
+            attn_output = self.multi_head_self_attention(news_vectors,news_vectors,news_vectors,mask=attn_masks, time_mat=mat)
+            user_vector = self.additive_attention(attn_output, attn_masks)
+            vectors.append(user_vector)
+        # attn_output = self.multi_head_self_attention(news_vectors,news_vectors,news_vectors,mask=attn_masks, time_mat=time_mat2)
+        # user_vector = self.additive_attention(attn_output, attn_masks)
+        # self.encoder(news_vectors)
+        user_vector = None
+        for vector in vectors:
+            if user_vector is None:
+                user_vector = vector
+                continue
+            user_vector += vector
 
-    def forward(self, news_vector, user_vector):
-        predict = torch.bmm(user_vector.unsqueeze(dim=1), news_vector.unsqueeze(dim=2)).flatten()
-        return predict
+        return user_vector
 
 
 class Model(torch.nn.Module):
@@ -151,7 +193,8 @@ class Model(torch.nn.Module):
         super(Model, self).__init__()
         self.news_encoder = NewsEncoder(config)
         self.user_encoder = UserEncoder(config)
-    
+        self.news_encoder.initialize()
+        self.user_encoder.initialize()
         #self.encoder= Transformer_Encoder(config)
         #self.fc = nn.Linear(config.feature_size*2,  1)
         self.config=config
@@ -164,6 +207,7 @@ class Model(torch.nn.Module):
         # ]
         self.device=config.device
         #self.Iter_Linear=nn.Sequential(*iter_dense)
+    
     # @torchsnooper.snoop()
     def forward(self, batch):
         if self.config.dataset == "GLOBO":
@@ -206,7 +250,11 @@ class Model(torch.nn.Module):
         sample_masks=batch['candidate_mask'].to(self.config.device)
 
         # b*E
-        user_vector = self.user_encoder(browsed_vector,batch['browsed_mask'].to(self.config.device)).unsqueeze(1)
+        user_vector = self.user_encoder(
+                                        browsed_vector,
+                                        batch['browsed_mask'].to(self.config.device),
+                                        batch['time_mat'].to(self.config.device)
+                                        ).unsqueeze(1)
         # ui_vectors=user_vector*candidate_vector
         # ui_vectors=torch.cat([ui_vectors,candidate_vector],2)
         # attn_output=self.encoder(ui_vectors,sample_masks)
@@ -272,7 +320,6 @@ class Model(torch.nn.Module):
                                                     ).view(-1, self.config.news_feature_size)                    
                 self.news_embeds[i*batch_size + 1:].copy_(news_vector)
         return 
-
     
     def predict(self, batch):
         """

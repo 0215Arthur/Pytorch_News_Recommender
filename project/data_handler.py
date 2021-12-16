@@ -62,6 +62,35 @@ class NewsDataset(Dataset):
                 'categ_ids':browsed_categ_ids,\
                 'subcateg_ids':browsed_subcateg_ids}
 
+class AdrNewsDataset(Dataset):
+    def __init__(self, config, news_dict):
+        super(AdrNewsDataset, self).__init__()
+        self.bacthes=list(news_dict.items())
+        self.config = config
+        print("news num: ",len(self.bacthes)) 
+
+    def __len__(self):
+        return len(self.bacthes)
+
+    def __getitem__(self, index):
+        # 用户侧
+        data=self.bacthes[index][1]
+        browsed_ids=index
+        # 初始化
+        browsed_titles=np.array(data["titleid"][:self.config.n_words_title] + [0]*(self.config.n_words_title-len(data["titleid"][:self.config.n_words_title])),dtype=np.int)
+        browsed_categ_ids=torch.LongTensor([data["categoryid"]])
+        browsed_subcateg_ids=torch.LongTensor([data["subcategoryid"]])
+        title_mask = np.where(browsed_titles > 0, 1, 0)
+        abst_mask = np.where(browsed_absts > 0, 1, 0)
+        return {'ids': browsed_ids,
+                'titles':browsed_titles,\
+                # 'absts':browsed_absts,\
+                'title_mask':title_mask,\
+                # 'abst_mask':abst_mask,\
+                #'browsed_entity_ids':browsed_entity_ids,\
+                'categ_ids':browsed_categ_ids,\
+                'subcateg_ids':browsed_subcateg_ids}
+
 
 class MyDataset(Dataset):
     def __init__(self, config, datas, news_dict, is_train=True):
@@ -170,6 +199,25 @@ class AdrDataset(Dataset):
     def __len__(self):
         return len(self.bacthes)
 
+
+
+    def __timematrix__(self, intervals):
+        time_mats = []
+        for th in self.config.time_thresh:
+            p = [1 if _ < th else self.config.time_p for _ in intervals]
+            lens = len(p)
+            w=np.ones((lens,lens))
+            w=np.triu(w)
+            for i in range(lens):
+                for j in range(i + 1, lens):
+                    w[i][j]=w[i][j-1]*p[j]
+            w += w.T - np.diag(w.diagonal())
+            w = np.pad(w, (0, self.config.history_len - lens), 'constant')
+            time_mats.append(w)
+        
+        return torch.FloatTensor(np.array(time_mats))
+
+
     def __getitem__(self, index):
         # userId, hist_list, time_list, cand_list
         data=self.bacthes[index]
@@ -218,6 +266,11 @@ class AdrDataset(Dataset):
         #candidate_entity_ids=self.entity_dict[candidate_ids][:,:self.entity_nums]
         candidate_mask=torch.ByteTensor([1 for _ in range(y)]+[0 for _ in range(self.sample_size-y)])
         user_id = np.array([data[0]], dtype=np.int)
+        time_mat = 0
+        if "time_thresh" in self.config.__dict__:
+            intervals = data[2][-self.config.history_len:]
+            time_mat = self.__timematrix__(intervals)
+        
         return {
                 'user_id': user_id,\
                 'browsed_ids': browsed_ids,
@@ -235,7 +288,8 @@ class AdrDataset(Dataset):
                 'candidate_categ_ids':candidate_categ_ids,
                 'candidate_subcateg_ids':candidate_subcateg_ids,
                 'candidate_title_mask':candidate_title_mask,\
-                'candidate_mask':candidate_mask
+                'candidate_mask':candidate_mask,
+                'time_mat':time_mat
                 }
 
 
@@ -257,8 +311,25 @@ class GloboDataset(Dataset):
     def __len__(self):
         return len(self.bacthes)
 
+    def __timematrix__(self, intervals):
+        time_mats = []
+        for th in self.config.time_thresh:
+            p = [1 if _ < th else self.config.time_p for _ in intervals]
+            lens = len(p)
+            w=np.ones((lens,lens))
+            w=np.triu(w)
+            for i in range(lens):
+                for j in range(i + 1, lens):
+                    w[i][j]=w[i][j-1]*p[j]
+            w += w.T - np.diag(w.diagonal())
+            w = np.pad(w, (0, self.config.history_len - lens), 'constant')
+            time_mats.append(w)
+        
+        return torch.FloatTensor(np.array(time_mats))
+
     def __getitem__(self, index):
         # 用户侧
+        #  # ["user_id", "hist", "intervals", 'cands']
         data=self.bacthes[index]
          
         browsed_ids=np.zeros((self.config.history_len),dtype=np.int)
@@ -271,19 +342,22 @@ class GloboDataset(Dataset):
         # candidate_absts=np.zeros((self.sample_size,self.config.n_words_abst),dtype=np.int)
         # candidate_categ_ids=np.zeros((self.sample_size),dtype=np.int)
         # candidate_subcateg_ids=np.zeros((self.sample_size),dtype=np.int)
- 
+                                       
        
         browsed_lens=min(len(data[1]), self.config.history_len)
-        browsed_ids[:browsed_lens] = np.array(data[1][:self.config.history_len])
+        browsed_ids[:browsed_lens] = np.array(data[1][-self.config.history_len:])
         browsed_mask=torch.ByteTensor([1 for _ in range(browsed_lens)]+[0 for _ in range(self.config.history_len-browsed_lens )])
-
+        time_mat = 0
+        if "time_thresh" in self.config.__dict__:
+            intervals = data[2][-self.config.history_len:]
+            time_mat = self.__timematrix__(intervals)
 
         # browsed_categ_ids[:x]=np.array([self.news_dict[i]["Category"]  for i in data[0]] )
         # browsed_subcateg_ids[:x]=np.array([self.news_dict[i]["SubCategory"]  for i in data[0]] )
             # 对训练集而言： 需要构造新闻imps的数据特征； 
             # 而测试和验证集，均不需要，直接统一填充即可
-        y=len(data[2][:self.sample_size])
-        candidate_ids[:y]=np.array(data[2][:self.sample_size])
+        y=len(data[3][:self.sample_size])
+        candidate_ids[:y]=np.array(data[3][:self.sample_size])
 
         # candidate_categ_ids[:y]=np.array([self.news_dict[i]["Category"]  for i in data[1][:self.sample_size]])
         # candidate_subcateg_ids[:y]=np.array([self.news_dict[i]["SubCategory"]  for i in data[1][:self.sample_size]] )
@@ -303,7 +377,8 @@ class GloboDataset(Dataset):
                 #'candidate_entity_ids':candidate_entity_ids,\
                 # 'candidate_categ_ids':candidate_categ_ids,
                 # 'candidate_subcateg_ids':candidate_subcateg_ids,
-                'candidate_mask':candidate_mask}
+                'candidate_mask':candidate_mask,
+                'time_mat':time_mat}
 
 
 def get_data_loader(config, data, is_train = True):
@@ -338,14 +413,35 @@ def get_data_loader(config, data, is_train = True):
                                 shuffle=is_train,
                                 pin_memory=False)
     return data_iter
-        
+
+
+def get_news_loader(config):
+    if config.model_name.lower() in ["fim", 'lstur', 'tmgm']:
+        return None
+    if config.dataset in ["MIND"]:
+        with open(os.path.join(config.data_path, f"{config.dataset}/news.pkl"),'rb') as f:
+            news_dict=pickle.load(f)
+        if config.dataset == "MIND":
+            data=NewsDataset(config, news_dict)
+        else:
+            data=AdrNewsDataset(config, news_dict)
+        news_iter = DataLoader(dataset=data, 
+                        batch_size=1280, 
+                        num_workers=4,
+                        drop_last=False,
+                        shuffle=False,
+                        pin_memory=False)
+    else:
+        return None
+    return news_iter
+
 
 if __name__ == "__main__":
     # word_dict = dict(pd.read_csv( ('../data_processed/'+ 'word_dict.csv'), sep='\t', na_filter=False, header=0).values.tolist())
     # for k, v in word_dict.items():
     #     print(k,v)
     #     break
-    config = Config(dataset="ADR")
+    config = Config(dataset="GLOBO", model_name="tmgm")
     
     with open(os.path.join(config.data_path,config.train_data), 'rb') as f:
         train_data=pickle.load(f)
@@ -354,9 +450,9 @@ if __name__ == "__main__":
     
     for i,_ in enumerate(train_iter):
         print(i)
-        # print(_)
+        print(_)
         # print(i)
-        # break
+        break
     print(train_iter.__len__())
 
     # dev_data=load_dataset(config,'dev_datas.pkl',config.data_path,_type=1)

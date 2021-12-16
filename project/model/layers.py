@@ -13,7 +13,7 @@ class Attention(nn.Module):
     Compute 'Scaled Dot Product Attention
     """
 
-    def forward(self, query, key, value, head_nums,mask=None, dropout=None, topic_query=None, topic_key=None):
+    def forward(self, query, key, value, head_nums,mask=None, dropout=None, time_mat=None):
         # 
         scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(query.size(-1))
         
@@ -26,8 +26,10 @@ class Attention(nn.Module):
             #print(_mask.size())
             _mask=torch.cat([_mask for _ in range(head_nums)],1)
             scores = scores.masked_fill(_mask == 0, -1e9)
-            if topic_query is not None:
-                topic_scores = torch.matmul(topic_query, topic_key.transpose(-2, -1)) / math.sqrt(topic_query.size(-1))
+            if time_mat is not None:
+                # print("time_mat size", time_mat.unsqueeze(1).size())
+                # print("scores size", scores.size())
+                # topic_scores = torch.matmul(topic_query, topic_key.transpose(-2, -1)) / math.sqrt(topic_query.size(-1))
                 _mask=mask.unsqueeze(1)*mask.unsqueeze(2)
                 # print(_mask.size())
                 # for row in topic_scores.detach().cpu().numpy():
@@ -35,9 +37,9 @@ class Attention(nn.Module):
                 #         print(_, end='')
                 #     print() 
                 # print("topic_scores: ",topic_scores)
-                topic_scores = topic_scores.masked_fill(_mask == 0, 1).unsqueeze(1)
-                topic_scores = F.softmax(topic_scores, dim=-1)
-                scores = scores * topic_scores
+                # topic_scores = time_mat.masked_fill(_mask == 0, 1).unsqueeze(1)
+                # topic_scores = F.softmax(topic_scores, dim=-1)
+                scores = scores * time_mat.unsqueeze(1)
                 # scores /= topic_query.size(-1)
                 # print(scores)
                 # topic_scores
@@ -47,7 +49,6 @@ class Attention(nn.Module):
         
         if dropout is not None:
             p_attn = dropout(p_attn)
-
         return torch.matmul(p_attn, value), p_attn
 
 
@@ -82,23 +83,23 @@ class MultiHeadSelfAttention(nn.Module):
 
 
   #  @torchsnooper.snoop()
-    def forward(self, query, key, value, mask=None, topic=None, save_attn=False):
+    def forward(self, query, key, value, mask=None, time_mat=None, save_attn=False):
         batch_size = query.size(0)
-        topic_query=None
-        topic_key=None
+        # topic_query=None
+        # topic_key=None
         # 1) Do all the linear projections in batch from d_model => h x d_k
         query, key, value = [l(x).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
                              for l, x in zip(self.linear_layers, (query, key, value))]
         # if topic is not None:
         #     topic_query, topic_key = [l(x) for l, x in zip(self.topic_layers, (topic, topic))]
         # 2) Apply attention on all the projected vectors in batch. 
-        x, attn = self.attention(query, key, value, head_nums=self.h, mask=mask, dropout=self.dropout)
+        x, attn = self.attention(query, key, value, head_nums=self.h, mask=mask, dropout=self.dropout, time_mat=time_mat)
         # if save_attn:
         #     torch.save
         # 3) "Concat" using a view and apply a final linear.
         x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
 
-        return self.output_linear(x), attn
+        return self.output_linear(x)#, attn
   
 class AdditiveAttention(torch.nn.Module):
     def __init__(self, query_vector_dim, input_vector_dim):

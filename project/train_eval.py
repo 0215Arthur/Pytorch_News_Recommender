@@ -28,7 +28,7 @@ from model import Model
 
 from joblib import Parallel, delayed
 
-def train(config, model, train_iter, dev_iter, news_iter ):    
+def train(config, model, train_iter, dev_iter, test_iter, news_iter=None):    
     start_time = time.time()
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
@@ -128,8 +128,8 @@ def train(config, model, train_iter, dev_iter, news_iter ):
                 #     if config.save_flag:
                 #         torch.save(model.state_dict(), config.save_path+'T{}_{}_epoch{}_iter_{}_auc_{:.3f}.ckpt'.format(time.strftime('%m-%d_%H.%M'),config.model_name,config.num_epochs,total_batch,AUC_best))
 
-        auc, eval_res=evaluate(model,dev_iter,news_iter)
-        log_res(config,eval_res,'epoch_{}'.format(epoch))
+        auc, eval_res=evaluate(model,test_iter,news_iter)
+        log_res(config,eval_res,'epoch_{}-test*'.format(epoch))
         if auc>AUC_best:
             AUC_best=auc
             if config.save_flag:
@@ -137,7 +137,7 @@ def train(config, model, train_iter, dev_iter, news_iter ):
 
         if flag:
             break
-    plot_loss(config.log_path,loss_records,step_size=STEP_SIZE)
+    # plot_loss(config.log_path,loss_records,step_size=STEP_SIZE)
  
 
 def _cal_score(y_true, pred, real_length):
@@ -148,14 +148,15 @@ def _cal_score(y_true, pred, real_length):
     ndcg10 = ndcg_score(y_true[:real_length], pred[:real_length], 10)
     return [auc, mrr, ndcg1, ndcg5, ndcg10]
 
+
 def evaluate(model, data_iter, news_iter):
     model.eval()
     res=[]
     scores=[]
     with torch.no_grad():
-        print("update news vectors")
         candidate_lens=[]
         if news_iter is not None:
+            print("update news vectors")
             model.update_rep(news_iter)
         with tqdm(total=(data_iter.__len__()), desc='Predicting') as p: 
             for i, datas in enumerate(data_iter):
@@ -196,9 +197,13 @@ if __name__=='__main__':
     parser.add_argument('--version', type=str, default="", help='experiment comment')  
     parser.add_argument('--model', type=str, default="nrms", help='choose the proper model')          
     parser.add_argument('--data', type=str, default="GLOBO", help='choose the proper dataset') 
-
+    parser.add_argument('--time_thresh', type=int, default=600, help='hyper-param for tmgm') 
+    parser.add_argument('--time_p', type=float, default=0.9, help='hyper-param for tmgm') 
+    parser.add_argument('--gpu', type=int, default=0, help='hyper-param for tmgm') 
     args = parser.parse_args()
 
+    os.environ["CUDA_VISIBLE_DEVICES"] =str(args.gpu)
+    
     print(os.getpid())
     torch.manual_seed(2020)
     torch.cuda.manual_seed_all(2020)
@@ -211,30 +216,40 @@ if __name__=='__main__':
     config=Config(args.model, args.data)
 
     config.version=args.version
+    
+    # if hasattr(config, "time_thresh"):
+    #     config.time_thresh=args.time_thresh
+    
+    # if hasattr(config, "time_p"):
+    #     config.time_p = args.time_p
+    
     with open(os.path.join(config.data_path,config.train_data), 'rb') as f:
         train_data=pickle.load(f)
-        
+
     with open(os.path.join(config.data_path,config.val_data), 'rb') as f:
         val_data=pickle.load(f)
+
+    with open(os.path.join(config.data_path,config.test_data), 'rb') as f:
+        test_data=pickle.load(f)
+
     # with open(os.path.join(config.data_path, "MIND/news.pkl"),'rb') as f:
     #     news_dict=pickle.load(f)
     train_iter = get_data_loader(config, train_data, is_train=True)
 
     val_iter = get_data_loader(config, val_data, is_train=False)
 
+    test_iter = get_data_loader(config, test_data, is_train=False)
+    
+    news_iter = get_news_loader(config)
+    
     model=Model(config).to(config.device)
-    recommender=Model(config)
-    if args.data == "GLOBO" or args.model.lower()  == 'fim':
-        news_iter = None
-    else:
-        data=NewsDataset(news_dict)
-        news_iter = DataLoader(dataset=data, 
-                                  batch_size=1280, 
-                                  num_workers=4,
-                                  drop_last=False,
-                                  shuffle=False,
-                                  pin_memory=False)
-    train(config,model,train_iter,val_iter, news_iter=None)
+    # recommender=Model(config)
+    # if args.data == "GLOBO" or args.model.lower()  == 'fim':
+    #     news_iter = None
+    # else:
+    #     data=NewsDataset(news_dict)
+
+    train(config,model,train_iter,val_iter, test_iter, news_iter)
 
 
  

@@ -30,11 +30,15 @@ def merge_log(df, start, mid, end):
     指定时间戳，进行窗口内合并操作
     """
     # print(start, mid, end)
+    print("start {} - mid {} - end {}".format(start, mid, end))
     _df = df[(df["click_timestamp"] >= start * 1000) & (df["click_timestamp"] < mid * 1000)].reset_index(drop=True)
-   
-    
+    _df['last'] = _df.groupby('user_id')['click_timestamp'].diff(1)
+    _df['last'] = _df['last'] / 1000.
+    _df.fillna(0, inplace=True)
     his_df = _df.groupby("user_id")["click_article_id"].agg(list)
     his_df = his_df.reset_index()
+    his_df.columns = ["user_id", "hist"]
+    his_interval = _df.groupby("user_id")["last"].agg(list).reset_index()
     print(his_df.shape)
 
     target_df = df[(df["click_timestamp"] >= mid * 1000) & (df["click_timestamp"] <= end * 1000)].groupby("user_id")["click_article_id"].agg(list)
@@ -42,7 +46,9 @@ def merge_log(df, start, mid, end):
     print(target_df.shape)
 
     res_df = pd.merge(target_df, his_df, how='inner', on='user_id')
-    # print(res_df.shape)
+    res_df = pd.merge(res_df, his_interval, how='inner', on='user_id')
+    print(res_df.shape)
+    print(res_df.columns)
     return res_df
 
 def process_log():
@@ -53,11 +59,11 @@ def process_log():
     单条数据： [historical news],[read news]
     """
     hours = []
-    for i in range(192):#336
+    for i in range(336):#336
         hour = str(i).zfill(3)
         df = pd.read_csv(root_path + "clicks/clicks/clicks_hour_{}.csv".format(hour))
         hours.append(df)
-    df = pd.concat(hours)
+    df = pd.concat(hours)[["user_id", "click_article_id", "click_timestamp"]]
     df = df.sort_values(by="click_timestamp")
     start_time = time.mktime(time.strptime("2017-10-01", '%Y-%m-%d'))
     res = []
@@ -71,8 +77,8 @@ def process_log():
         start_time = datetime.datetime.fromtimestamp(start_time) + datetime.timedelta(days = 1)
         start_time = (time.mktime(start_time.timetuple()))
     res_df = pd.concat(res)
-    res_df.columns = ["user_id", "historical", "target"]
-    # res_df.to_csv("./dataset_processed/Globo/data.csv",index=False)
+    res_df.columns = ["user_id", "target", "hist", "intervals"]
+    res_df.to_csv("./dataset_processed/GLOBO/data.csv",index=False)
 
 def split_data(val_ratio = 0.1, test_ratio = 0.1):
     """
@@ -89,7 +95,7 @@ def split_data(val_ratio = 0.1, test_ratio = 0.1):
     news_ids = Counter()
     user_ids = set()
     hist_cnt = []
-    for i, line in tqdm(enumerate(df["historical"].tolist())):
+    for i, line in tqdm(enumerate(df["hist"].tolist())):
         hist = literal_eval(line)
         if len(hist) < 5:
             continue 
@@ -115,17 +121,29 @@ def split_data(val_ratio = 0.1, test_ratio = 0.1):
         
     print("news num: ", len(news_ids))
     print("user num: ", len(user_ids)) # 38363
-    user_dict = dict(zip(list(user_ids), range(len(user_ids))))
+    user_dict = dict(zip(list(user_ids), range(1, len(user_ids) + 1)))
     news_dict = dict(zip(news_ids.keys(), range(1, len(news_ids) + 1)))
     final_res = []
-    for line in tqdm(res):
-        tmp = [user_dict[line[0]],\
-                        [news_dict[_] for _ in line[1]]]
-        pos = [news_dict[_] for _ in line[2]]
-        for _ in pos[:min(len(line[1]), 5)]:
-            final_res.append(tmp + [_] + [pos])
-            
+    # user_id, hist, target, intervals
+    # for line in tqdm(res):
+    #     tmp = [user_dict[line[0]],\
+    #                     [news_dict[_] for _ in line[1]]]
+    #     pos = [news_dict[_] for _ in line[2]]
+    #     for _ in pos[:min(len(line[1]), 5)]:
+    #         final_res.append(tmp + [_] + [pos])
+    # ["user_id", "target", "hist", "intervals"]
     
+    for line in tqdm(df.values.tolist()):
+        if len(literal_eval(line[2])) < 5:
+            continue
+        intervals = literal_eval(line[3])
+        intervals[0] = 0.
+        tmp = [user_dict[line[0]], [news_dict[_] for _ in literal_eval(line[2])], intervals]
+        pos = [news_dict[_] for _ in literal_eval(line[1])]
+        _target = literal_eval(line[1])
+        for _ in pos[:min(len(_target), 5)]:
+            final_res.append(tmp + [_] + [pos])
+    # ["user_id", "hist", "intervals", 'target]
     print(len(final_res))
     data_num = len(final_res)
     val_num = int (data_num * val_ratio)
@@ -133,7 +151,7 @@ def split_data(val_ratio = 0.1, test_ratio = 0.1):
     train_num = data_num - val_num - test_num
     
     train_res = Parallel(n_jobs=8)(
-            delayed(neg_sampling)(sample, i, K = 3) for i, sample in enumerate((final_res[:train_num]))
+            delayed(neg_sampling)(sample, i, K = 4) for i, sample in enumerate((final_res[:train_num]))
         )
     
     val_res = Parallel(n_jobs=8)(
@@ -224,15 +242,16 @@ def time_interval_desc():
     u_res_df.to_csv("globo_time_user_mean_interval.csv",index=False)
 
 
-def neg_sampling(sample, i, news_num=21482, K=3):
-    # print(sample)
-    exclusion = sample[1] + [sample[3]]
+def neg_sampling(sample, i, news_num=26010, K=3):
+    # ["user_id", "hist", "intervals", 'target', 'all_impress']
+    exclusion = sample[1] + [sample[3]] + sample[4]
     # print("neg_sampling")
     neg_samples = random.sample([_ for _ in range(1, news_num) if _ not in exclusion], K)
     # print(neg_samples)
     if i % 10000 == 0 and i > 0:
         print("processed {} samples".format(i))
-    return [sample[0], sample[1], [sample[2]] + neg_samples]
+    # ["user_id", "hist", "intervals", 'cands']
+    return [sample[0], sample[1], sample[2], [sample[3]] + neg_samples]
 
 
 def load_article_embedding():
@@ -241,18 +260,18 @@ def load_article_embedding():
     """
     with open("./data/Globo/articles_embeddings.pickle",'rb') as f:
         embed = pickle.load(f)
-    with open("./dataset_processed/Globo/news.json", 'r') as f:
+    with open("./dataset_processed/GLOBO/news.json", 'r') as f:
         news = json.load(f)
 
     embedding_result = embed[[int(_) for _ in list(news.keys())], :] 
     #np.random.normal(size=(1 , 250))
     embedding_result=np.concatenate((np.zeros((1,250)),embedding_result))
     # print((embed[[0,1,2,3], :]).shape)
-    np.savez_compressed("./dataset_processed/Globo/article_embed.npz", embeddings=embedding_result)
+    np.savez_compressed("./dataset_processed/GLOBO/article_embed.npz", embeddings=embedding_result)
 
 
 if __name__ == "__main__":
-    process_log()
+    # process_log()
     # time_interval_desc()
-    split_data()
-    # load_article_embedding()
+    # split_data()
+    load_article_embedding()
